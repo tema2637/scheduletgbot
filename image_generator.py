@@ -18,6 +18,15 @@ def get_font(size: int, bold: bool = False):
             pass
     return ImageFont.load_default(size=size)
 
+def fit_text(draw: ImageDraw.ImageDraw, text: str, font, max_width: float) -> str:
+    if max_width <= 20:
+        return text
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    while text and draw.textlength(text + "…", font=font) > max_width:
+        text = text[:-1]
+    return (text + "…") if text else ""
+
 def render_week_image(target_name: str, monday: date, is_teacher: bool = False) -> bytes:
     BG_COLOR = (24, 25, 30)
     CARD_BG = (34, 36, 44)
@@ -33,9 +42,9 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
     f_title = get_font(36, bold=True)
     f_subtitle = get_font(22, bold=False)
     f_day_head = get_font(26, bold=True)
-    f_time = get_font(22, bold=False)
+    f_time = get_font(21, bold=False)
     f_lesson = get_font(22, bold=True)
-    f_sub = get_font(20, bold=False)
+    f_sub = get_font(19, bold=False)
     f_footer = get_font(18, bold=False)
 
     DAYS_RU = ['ПОНЕДЕЛЬНИК', 'ВТОРНИК', 'СРЕДА', 'ЧЕТВЕРГ', 'ПЯТНИЦА']
@@ -61,7 +70,7 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
             block_h += 35
         else:
             for _, items in sorted(slots.items()):
-                block_h += 36 * len(items) + 10
+                block_h += 38 * len(items) + 8
         block_h += 15
 
         day_blocks.append((d, DAYS_RU[i], slots, block_h))
@@ -82,6 +91,10 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
     y += 46
 
     card_w = WIDTH - 2 * PAD
+    col_time_x = PAD + 20
+    col_title_x = PAD + 215
+    right_edge = PAD + card_w - 20
+
     for d, day_name, slots, block_h in day_blocks:
         card_x = PAD
         card_y = y
@@ -103,14 +116,19 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
                     cab = f"ауд. {r['Cabinet']}" if r.get('Cabinet') else ""
 
                     time_label = f"{num}. {st}–{et}"
-                    draw.text((card_x + 18, cy), time_label, fill=TEXT_MUTED, font=f_time)
-                    draw.text((card_x + 220, cy), title, fill=TEXT_MAIN, font=f_lesson)
+                    draw.text((col_time_x, cy + 1), time_label, fill=TEXT_MUTED, font=f_time)
 
                     extra_text = f"{extra}  {cab}".strip()
+                    extra_w = draw.textlength(extra_text, font=f_sub) if extra_text else 0
+                    extra_x = right_edge - extra_w
                     if extra_text:
-                        draw.text((card_x + 650, cy), extra_text, fill=TAG_TEXT, font=f_sub)
+                        draw.text((extra_x, cy + 2), extra_text, fill=TAG_TEXT, font=f_sub)
 
-                    cy += 36
+                    max_title_w = (extra_x - 16) - col_title_x if extra_text else (right_edge - col_title_x)
+                    fitted_title = fit_text(draw, title, f_lesson, max_title_w)
+                    draw.text((col_title_x, cy), fitted_title, fill=TEXT_MAIN, font=f_lesson)
+
+                    cy += 38
                 cy += 6
 
         y += block_h + 16
@@ -136,8 +154,8 @@ def render_day_image(target_name: str, day: date, is_teacher: bool = False) -> b
 
     f_title = get_font(36, bold=True)
     f_subtitle = get_font(24, bold=False)
-    f_time = get_font(22, bold=False)
-    f_lesson = get_font(24, bold=True)
+    f_time = get_font(21, bold=False)
+    f_lesson = get_font(23, bold=True)
     f_sub = get_font(20, bold=False)
     f_footer = get_font(18, bold=False)
 
@@ -150,32 +168,44 @@ def render_day_image(target_name: str, day: date, is_teacher: bool = False) -> b
     for r in lessons:
         slots.setdefault(r['TimeSlot']['NumberSlot'], []).append(r)
 
-    content_h = 50
+    ROW_H = 46
+    card_inner_h = 24
     if not slots:
-        content_h += 60
+        card_inner_h += 50
     else:
         for _, items in slots.items():
-            content_h += 50 * len(items) + 12
+            card_inner_h += ROW_H * len(items) + 8
 
-    total_height = PAD + 90 + 20 + content_h + 60 + PAD
+    card_w = WIDTH - 2 * PAD
+    HEADER_H = 110
+    FOOTER_H = 50
+    total_height = PAD + HEADER_H + card_inner_h + FOOTER_H + PAD
+
     im = Image.new('RGB', (WIDTH, total_height), color=BG_COLOR)
     draw = ImageDraw.Draw(im)
 
     y = PAD
     role_prefix = "Преподаватель" if is_teacher else "Группа"
     draw.text((PAD, y), f"{role_prefix}: {target_name}", fill=TEXT_MAIN, font=f_title)
-    y += 46
+    y += 48
     w_info = f" • Неделя: {week_num}" if week_num > 0 else ""
     draw.text((PAD, y), f"{DAYS_RU[day.weekday()]}, {day:%d.%m.%Y}{w_info}", fill=HEADER_ACCENT, font=f_subtitle)
     y += 50
 
-    card_w = WIDTH - 2 * PAD
-    draw.rounded_rectangle((PAD, y, PAD + card_w, y + content_h), radius=16, fill=CARD_BG, outline=BORDER_COLOR, width=1)
-    cy = y + 25
+    card_y = y
+    draw.rounded_rectangle(
+        (PAD, card_y, PAD + card_w, card_y + card_inner_h),
+        radius=16, fill=CARD_BG, outline=BORDER_COLOR, width=1
+    )
+    cy = card_y + 18
 
     if not slots:
-        draw.text((PAD + 30, cy + 10), "✨ На этот день в расписании занятий нет.", fill=TEXT_MUTED, font=f_subtitle)
+        draw.text((PAD + 25, cy + 10), "✨ На этот день в расписании занятий нет.", fill=TEXT_MUTED, font=f_subtitle)
     else:
+        col_time_x = PAD + 25
+        col_title_x = PAD + 285
+        right_edge = PAD + card_w - 25
+
         for num, items in sorted(slots.items()):
             st = items[0]['TimeSlot']['StartTime']
             et = items[0]['TimeSlot']['EndTime']
@@ -184,19 +214,24 @@ def render_day_image(target_name: str, day: date, is_teacher: bool = False) -> b
                 extra = f"[{r['Group']['Name']}]" if is_teacher else (r.get('TeacherName') or '')
                 cab = f"ауд. {r['Cabinet']}" if r.get('Cabinet') else ""
 
-                time_label = f"Пара {num}  ({st}–{et})"
-                draw.text((PAD + 25, cy), time_label, fill=TEXT_MUTED, font=f_time)
-                draw.text((PAD + 260, cy), title, fill=TEXT_MAIN, font=f_lesson)
+                time_label = f"Пара {num}   {st}–{et}"
+                draw.text((col_time_x, cy + 1), time_label, fill=TEXT_MUTED, font=f_time)
 
                 extra_text = f"{extra}  {cab}".strip()
+                extra_w = draw.textlength(extra_text, font=f_sub) if extra_text else 0
+                extra_x = right_edge - extra_w
                 if extra_text:
-                    draw.text((PAD + 700, cy + 2), extra_text, fill=TAG_TEXT, font=f_sub)
+                    draw.text((extra_x, cy + 1), extra_text, fill=TAG_TEXT, font=f_sub)
 
-                cy += 50
-            cy += 10
+                max_title_w = (extra_x - 20) - col_title_x if extra_text else (right_edge - col_title_x)
+                fitted_title = fit_text(draw, title, f_lesson, max_title_w)
+                draw.text((col_title_x, cy), fitted_title, fill=TEXT_MAIN, font=f_lesson)
+
+                cy += ROW_H
+            cy += 8
 
     footer_label = f"Расписание колледжа • {config.FOOTER_TEXT}" if config.FOOTER_TEXT else "Расписание колледжа"
-    draw.text((PAD, total_height - PAD - 20), footer_label, fill=TEXT_MUTED, font=f_footer)
+    draw.text((PAD, total_height - PAD - 22), footer_label, fill=TEXT_MUTED, font=f_footer)
 
     buf = io.BytesIO()
     im.save(buf, format='PNG', optimize=True)
