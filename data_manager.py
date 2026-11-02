@@ -196,12 +196,14 @@ class DataManager:
             c=sqlite3.connect(self.db_path,timeout=5)
             try:
                 c.execute('PRAGMA journal_mode=WAL')
-                c.execute('CREATE TABLE IF NOT EXISTS user_preferences(user_id INTEGER PRIMARY KEY,group_name TEXT,notify_evening INTEGER DEFAULT 0,notify_time TEXT DEFAULT NULL,last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+                c.execute('CREATE TABLE IF NOT EXISTS user_preferences(user_id INTEGER PRIMARY KEY,group_name TEXT,notify_evening INTEGER DEFAULT 0,notify_time TEXT DEFAULT NULL,last_active TIMESTAMP DEFAULT NULL)')
                 try: c.execute('ALTER TABLE user_preferences ADD COLUMN notify_evening INTEGER DEFAULT 0')
                 except sqlite3.OperationalError: pass
                 try: c.execute('ALTER TABLE user_preferences ADD COLUMN notify_time TEXT DEFAULT NULL')
                 except sqlite3.OperationalError: pass
-                try: c.execute('ALTER TABLE user_preferences ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+                try:
+                    c.execute('ALTER TABLE user_preferences ADD COLUMN last_active TIMESTAMP DEFAULT NULL')
+                    c.execute('UPDATE user_preferences SET last_active=CURRENT_TIMESTAMP WHERE last_active IS NULL')
                 except sqlite3.OperationalError: pass
                 c.commit()
             finally: c.close()
