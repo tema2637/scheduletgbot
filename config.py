@@ -10,8 +10,8 @@ ENV={**dotenv_values(BASE_DIR/'.env'),**os.environ}
 BOT_TOKEN=(ENV.get('BOT_TOKEN') or '').strip()
 PROXY=(ENV.get('PROXY') or '').strip()
 CHANNEL=(ENV.get('CHANNEL') or '').strip()
-FOOTER_TEXT=(ENV.get('FOOTER_TEXT') or '').strip()
-FOOTER_URL=(ENV.get('FOOTER_URL') or '').strip()
+FOOTER_TEXT=(ENV.get('FOOTER_TEXT') or 'Лучший VPN — EtherVPN').strip()
+FOOTER_URL=(ENV.get('FOOTER_URL') or 'https://t.me/ethervpnbot?start=partner_268964754').strip()
 CHANNEL_URL=(ENV.get('CHANNEL_URL') or '').strip()
 
 def _env_bool(name,default):

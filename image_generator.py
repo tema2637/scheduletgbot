@@ -2,6 +2,7 @@ import io
 from datetime import date, timedelta
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+import config
 from data_manager import data_manager
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -114,7 +115,8 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
 
         y += block_h + 16
 
-    draw.text((PAD, y + 10), "Расписание колледжа • @Ollamamonitorbbot", fill=TEXT_MUTED, font=f_footer)
+    footer_label = f"Расписание колледжа • {config.FOOTER_TEXT}" if config.FOOTER_TEXT else "Расписание колледжа"
+    draw.text((PAD, y + 10), footer_label, fill=TEXT_MUTED, font=f_footer)
 
     buf = io.BytesIO()
     im.save(buf, format='PNG', optimize=True)
