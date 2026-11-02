@@ -196,10 +196,12 @@ class DataManager:
             c=sqlite3.connect(self.db_path,timeout=5)
             try:
                 c.execute('PRAGMA journal_mode=WAL')
-                c.execute('CREATE TABLE IF NOT EXISTS user_preferences(user_id INTEGER PRIMARY KEY,group_name TEXT,notify_evening INTEGER DEFAULT 0,notify_time TEXT DEFAULT NULL)')
+                c.execute('CREATE TABLE IF NOT EXISTS user_preferences(user_id INTEGER PRIMARY KEY,group_name TEXT,notify_evening INTEGER DEFAULT 0,notify_time TEXT DEFAULT NULL,last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
                 try: c.execute('ALTER TABLE user_preferences ADD COLUMN notify_evening INTEGER DEFAULT 0')
                 except sqlite3.OperationalError: pass
                 try: c.execute('ALTER TABLE user_preferences ADD COLUMN notify_time TEXT DEFAULT NULL')
+                except sqlite3.OperationalError: pass
+                try: c.execute('ALTER TABLE user_preferences ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
                 except sqlite3.OperationalError: pass
                 c.commit()
             finally: c.close()
@@ -248,6 +250,36 @@ class DataManager:
         try:
             with c: return [r[0] for r in c.execute('SELECT user_id FROM user_preferences WHERE group_name=?',(target,)).fetchall()]
         finally: c.close()
+    def touch_user(self,user_id):
+        c=self._connect()
+        try:
+            with c: c.execute('UPDATE user_preferences SET last_active=CURRENT_TIMESTAMP WHERE user_id=?',(user_id,))
+        finally: c.close()
+    def get_stats(self):
+        c=self._connect()
+        try:
+            with c:
+                total_users=c.execute('SELECT count(*) FROM user_preferences WHERE user_id > 0').fetchone()[0]
+                total_chats=c.execute('SELECT count(*) FROM user_preferences WHERE user_id < 0').fetchone()[0]
+                active_24h=c.execute("SELECT count(*) FROM user_preferences WHERE last_active >= datetime('now', '-1 day')").fetchone()[0]
+                active_7d=c.execute("SELECT count(*) FROM user_preferences WHERE last_active >= datetime('now', '-7 days')").fetchone()[0]
+                with_reminders=c.execute('SELECT count(*) FROM user_preferences WHERE notify_time IS NOT NULL AND notify_time != "off"').fetchone()[0]
+                teachers_users=c.execute("SELECT count(*) FROM user_preferences WHERE group_name LIKE 'teacher:%'").fetchone()[0]
+                top_groups=c.execute(
+                    "SELECT group_name, count(*) as cnt FROM user_preferences "
+                    "WHERE group_name NOT LIKE 'teacher:%' AND group_name IS NOT NULL "
+                    "GROUP BY group_name ORDER BY cnt DESC LIMIT 5"
+                ).fetchall()
+                return {
+                    'total_users': total_users,
+                    'total_chats': total_chats,
+                    'active_24h': active_24h,
+                    'active_7d': active_7d,
+                    'with_reminders': with_reminders,
+                    'teachers_users': teachers_users,
+                    'top_groups': top_groups,
+                }
+        finally: c.close()
     def is_teacher_target(self,target):
         return bool(target and str(target).startswith('teacher:'))
     def target_name(self,target):
@@ -270,7 +302,7 @@ class DataManager:
             if target not in self.get_groups(): raise UnknownGroup('Группа не найдена.')
         c=self._connect()
         try:
-            with c: c.execute('INSERT INTO user_preferences(user_id,group_name) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET group_name=excluded.group_name',(user_id,target))
+            with c: c.execute('INSERT INTO user_preferences(user_id,group_name,last_active) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET group_name=excluded.group_name,last_active=CURRENT_TIMESTAMP',(user_id,target))
         finally: c.close()
     def save_user_group(self,user_id,group):
         return self.save_user_target(user_id,group)

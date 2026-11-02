@@ -224,16 +224,52 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(has_changed)
             self.assertEqual(changed, set())
 
-    def test_render_week_image(self):
-        from image_generator import render_week_image
+    def test_render_week_and_day_image(self):
+        from image_generator import render_week_image, render_day_image
         png = render_week_image("РЗ 252", date(2026, 11, 2))
         self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertGreater(len(png), 5000)
 
-        # Teacher image
+        # Day image
+        d_png = render_day_image("РЗ 252", date(2026, 11, 2))
+        self.assertTrue(d_png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(d_png), 3000)
+
+        # Teacher images
         t_png = render_week_image("Шаталов Н.А.", date(2026, 11, 2), is_teacher=True)
         self.assertTrue(t_png.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertGreater(len(t_png), 5000)
+
+        t_day_png = render_day_image("Шаталов Н.А.", date(2026, 11, 2), is_teacher=True)
+        self.assertTrue(t_day_png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(t_day_png), 3000)
+
+    def test_stats_and_group_chats(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DataManager(
+                schedule_path=ROOT / "data" / "schedule.json",
+                db_path=Path(directory) / "users.db",
+            )
+            # Private user
+            manager.save_user_target(101, "РЗ 252")
+            manager.set_user_notify_time(101, "20:00")
+
+            # Teacher user
+            manager.save_user_target(102, "teacher:Шаталов Н.А.")
+
+            # Group chat (negative ID)
+            manager.save_user_target(-100123456, "РЗ 252")
+            manager.touch_user(-100123456)
+
+            self.assertEqual(manager.get_user_target(-100123456), "РЗ 252")
+
+            stats = manager.get_stats()
+            self.assertEqual(stats["total_users"], 2)
+            self.assertEqual(stats["total_chats"], 1)
+            self.assertEqual(stats["active_24h"], 3)
+            self.assertEqual(stats["with_reminders"], 1)
+            self.assertEqual(stats["teachers_users"], 1)
+            self.assertEqual(stats["top_groups"], [("РЗ 252", 2)])
 
 
 class SubscriptionCacheTests(unittest.IsolatedAsyncioTestCase):

@@ -31,11 +31,30 @@ async def run_bot():
         )
     dp=Dispatcher(); dp.update.middleware(subscription.SubscriptionMiddleware()); dp.include_router(inline_router)
 
+    def get_target_id(event) -> int:
+        if isinstance(event, types.CallbackQuery):
+            msg = event.message
+            if msg and msg.chat and msg.chat.type in ('group', 'supergroup'):
+                return msg.chat.id
+            return event.from_user.id if event.from_user else 0
+        if isinstance(event, types.Message):
+            if event.chat and event.chat.type in ('group', 'supergroup'):
+                return event.chat.id
+            return event.from_user.id if event.from_user else 0
+        return 0
+
     async def send_chunks(message,text,keyboard=None):
         parts=ui.split_messages(text)
         for i,part in enumerate(parts):
             await message.answer(part,parse_mode='HTML',reply_markup=keyboard if i==len(parts)-1 else None)
     async def choose(message):
+        if message.chat and message.chat.type in ('group', 'supergroup'):
+            return await message.answer(
+                '⚙️ <b>Настройка группы для беседы</b>\n'
+                'Укажите группу командой:\n'
+                'Например: <code>/group РЗ 252</code>',
+                parse_mode='HTML'
+            )
         uid=message.from_user.id if message.from_user else None
         await message.answer('⚙️ <b>Настройки расписания</b>\nКто вы?',reply_markup=keyboards.get_settings_keyboard(uid),parse_mode='HTML')
 
@@ -59,6 +78,28 @@ async def run_bot():
     @dp.message(Command('start','menu'))
     async def start(message:types.Message):
         if not message.from_user: return
+        cid=get_target_id(message)
+        data_manager.touch_user(cid)
+        if message.chat and message.chat.type in ('group','supergroup'):
+            target=data_manager.get_user_target(cid)
+            if target:
+                return await message.answer(
+                    f'👋 «Опять пары» в беседе!\n'
+                    f'Группа беседы: <b>{ui.safe(target)}</b>\n\n'
+                    f'📌 <b>Команды:</b>\n'
+                    f'/today — расписание на сегодня\n'
+                    f'/tomorrow — на завтра\n'
+                    f'/week — на неделю\n'
+                    f'/pic — картинка недели\n'
+                    f'/daypic — картинка на день\n'
+                    f'/group ИМЯ_ГРУППЫ — сменить группу',
+                    parse_mode='HTML'
+                )
+            return await message.answer(
+                '👋 Привет! Чтобы бот показывал расписание в этой беседе, укажите группу:\n'
+                'Например: <code>/group РЗ 252</code>',
+                parse_mode='HTML'
+            )
         parts=(message.text or '').split(maxsplit=1)
         if len(parts)==2 and parts[1]=='select_group':
             if not await subscription.is_subscribed(message.from_user.id):
@@ -82,8 +123,13 @@ async def run_bot():
         callback=isinstance(event,types.CallbackQuery)
         message=event.message if callback else event
         if not isinstance(message,types.Message) or not event.from_user: return
-        user_target=data_manager.get_user_target(event.from_user.id)
-        if not user_target: return await choose(message)
+        cid=get_target_id(event)
+        data_manager.touch_user(cid)
+        user_target=data_manager.get_user_target(cid)
+        if not user_target:
+            if message.chat and message.chat.type in ('group','supergroup'):
+                return await message.answer('В этой беседе не выбрана группа. Напишите: <code>/group РЗ 252</code>',parse_mode='HTML')
+            return await choose(message)
         if data_manager.is_teacher_target(user_target):
             t_name=data_manager.target_name(user_target)
             lessons=data_manager.get_teacher_schedule_for_day(t_name,target)
@@ -102,13 +148,22 @@ async def run_bot():
             await message.answer(part,parse_mode='HTML',reply_markup=keyboard if i==len(parts)-1 else None)
 
     @dp.message(F.text=='📅 Сегодня')
+    @dp.message(Command('today','сегодня','day'))
     async def today(message:types.Message): await show_day(message,data_manager.now())
+
     @dp.message(F.text=='⏭ Завтра')
+    @dp.message(Command('tomorrow','завтра'))
     async def tomorrow(message:types.Message): await show_day(message,data_manager.now()+timedelta(days=1))
+
     async def show_week(message,following=False):
         if not message.from_user: return
-        user_target=data_manager.get_user_target(message.from_user.id)
-        if not user_target: return await choose(message)
+        cid=get_target_id(message)
+        data_manager.touch_user(cid)
+        user_target=data_manager.get_user_target(cid)
+        if not user_target:
+            if message.chat and message.chat.type in ('group','supergroup'):
+                return await message.answer('В этой беседе не выбрана группа. Напишите: <code>/group РЗ 252</code>',parse_mode='HTML')
+            return await choose(message)
         now=data_manager.now(); monday=now-timedelta(days=now.weekday())+timedelta(weeks=int(following))
         if data_manager.is_teacher_target(user_target):
             text=data_manager.get_teacher_week_text(data_manager.target_name(user_target),monday)
@@ -116,12 +171,61 @@ async def run_bot():
             text=data_manager.get_week_text(user_target,monday)
         pic_kb=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text='🖼 Картинка недели',callback_data='pic:next' if following else 'pic:cur')]])
         await send_chunks(message,text,pic_kb)
+
     @dp.message(F.text=='🗓 Неделя')
+    @dp.message(Command('week','неделя'))
     async def week(message:types.Message): await show_week(message)
+
     @dp.message(F.text=='📆 След. неделя')
+    @dp.message(Command('next_week','следнеделя'))
     async def next_week(message:types.Message): await show_week(message,True)
+
     @dp.message(F.text=='⚙️ Настройки')
+    @dp.message(Command('settings','настройки'))
     async def settings(message:types.Message): await choose(message)
+
+    @dp.message(Command('group','setgroup','группа'))
+    async def cmd_group(message:types.Message):
+        cid=get_target_id(message)
+        parts=(message.text or '').split(maxsplit=1)
+        if len(parts)<2:
+            cur=data_manager.get_user_target(cid)
+            cur_label=f" Текущая: <b>{ui.safe(cur)}</b>." if cur else ""
+            return await message.answer(f"Использование: <code>/group ИМЯ_ГРУППЫ</code> (например: <code>/group РЗ 252</code>).{cur_label}",parse_mode='HTML')
+        query=parts[1].strip()
+        matched=next((g for g in data_manager.get_groups() if g.lower()==query.lower()),None)
+        if not matched:
+            cands=[g for g in data_manager.get_groups() if query.lower() in g.lower()]
+            if len(cands)==1: matched=cands[0]
+        if not matched:
+            return await message.answer(f"Группа «{ui.safe(query)}» не найдена в расписании. Проверьте правильность написания.")
+        data_manager.save_user_target(cid,matched)
+        chat_kind="этой беседы" if message.chat and message.chat.type in ('group','supergroup') else "вас"
+        await message.answer(
+            f"✅ Для {chat_kind} установлена группа: <b>{ui.safe(matched)}</b>\n"
+            f"Доступные команды: /today, /tomorrow, /week, /pic, /daypic",
+            parse_mode='HTML',
+            reply_markup=keyboards.get_main_keyboard() if message.chat.type=='private' else None
+        )
+
+    @dp.message(Command('stats','stat','статистика'))
+    async def cmd_stats(message:types.Message):
+        if not message.from_user or message.from_user.id!=config.ADMIN_ID:
+            return
+        stats=data_manager.get_stats()
+        top_lines=[f"{i}. <b>{ui.safe(g)}</b> — {cnt}" for i,(g,cnt) in enumerate(stats['top_groups'],1)]
+        top_str='\n'.join(top_lines) if top_lines else 'нет данных'
+        text=(
+            "📊 <b>Статистика бота</b>\n\n"
+            f"👤 Пользователей (ЛС): <b>{stats['total_users']}</b>\n"
+            f"💬 Бесед (групп): <b>{stats['total_chats']}</b>\n"
+            f"⚡ Активных за 24 ч: <b>{stats['active_24h']}</b>\n"
+            f"📅 Активных за 7 дней: <b>{stats['active_7d']}</b>\n"
+            f"⏰ С напоминаниями: <b>{stats['with_reminders']}</b>\n"
+            f"👨‍🏫 В режиме преподавателя: <b>{stats['teachers_users']}</b>\n\n"
+            f"🏆 <b>Топ групп:</b>\n{top_str}"
+        )
+        await message.answer(text,parse_mode='HTML')
 
     async def send_schedule_image(event,target,monday):
         from image_generator import render_week_image
@@ -143,21 +247,71 @@ async def run_bot():
             if callback: await event.answer('Не удалось сформировать картинку.')
             else: await handle_error(message,exc)
 
-    @dp.message(Command('pic','photo','image'))
+    async def send_day_schedule_image(event,target,day):
+        from image_generator import render_day_image
+        callback=isinstance(event,types.CallbackQuery)
+        message=event.message if callback else event
+        is_t=data_manager.is_teacher_target(target)
+        name=data_manager.target_name(target) if is_t else target
+        try:
+            png_bytes=render_day_image(name,day,is_teacher=is_t)
+            fn=f"day_{name.replace(' ', '_')}_{day:%d_%m}.png"
+            caption=f"🖼 <b>Расписание: {ui.safe(name)}</b> ({day:%d.%m.%Y})"
+            await message.answer_photo(
+                photo=types.BufferedInputFile(png_bytes,filename=fn),
+                caption=caption,
+                parse_mode='HTML'
+            )
+        except Exception as exc:
+            if callback: await event.answer('Не удалось сформировать картинку дня.')
+            else: await handle_error(message,exc)
+
+    @dp.message(Command('pic','photo','image','картинка'))
     async def cmd_pic(message:types.Message):
         if not message.from_user: return
-        user_target=data_manager.get_user_target(message.from_user.id)
-        if not user_target: return await choose(message)
+        cid=get_target_id(message)
+        user_target=data_manager.get_user_target(cid)
+        if not user_target:
+            if message.chat and message.chat.type in ('group','supergroup'):
+                return await message.answer('В этой беседе не выбрана группа. Напишите: <code>/group РЗ 252</code>',parse_mode='HTML')
+            return await choose(message)
         now=data_manager.now(); monday=now-timedelta(days=now.weekday())
         await send_schedule_image(message,user_target,monday)
+
+    @dp.message(Command('daypic','day_pic','картинка_дня'))
+    async def cmd_daypic(message:types.Message):
+        if not message.from_user: return
+        cid=get_target_id(message)
+        user_target=data_manager.get_user_target(cid)
+        if not user_target:
+            if message.chat and message.chat.type in ('group','supergroup'):
+                return await message.answer('В этой беседе не выбрана группа. Напишите: <code>/group РЗ 252</code>',parse_mode='HTML')
+            return await choose(message)
+        now=data_manager.now()
+        target_day=(now+timedelta(days=1)).date() if now.hour>=18 else now.date()
+        await send_day_schedule_image(message,user_target,target_day)
 
     @dp.callback_query(F.data.startswith('pic:'))
     async def callback_pic(callback:types.CallbackQuery):
         await callback.answer('Генерирую картинку...')
         if not callback.from_user: return
-        user_target=data_manager.get_user_target(callback.from_user.id)
+        cid=get_target_id(callback)
+        user_target=data_manager.get_user_target(cid)
         parts=(callback.data or '').split(':')
         now=data_manager.now()
+
+        if len(parts)>=3 and parts[1]=='day':
+            day=datetime.strptime(parts[2],'%Y-%m-%d').date()
+            if not user_target: return await choose(callback.message)
+            return await send_day_schedule_image(callback,user_target,day)
+
+        if len(parts)>=4 and parts[1]=='tday':
+            tid=parts[2]
+            teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==tid),None)
+            if not teacher: return
+            day=datetime.strptime(parts[3],'%Y-%m-%d').date()
+            return await send_day_schedule_image(callback,'teacher:'+teacher,day)
+
         if len(parts)>=2 and parts[1]=='next':
             monday=now-timedelta(days=now.weekday())+timedelta(weeks=1)
             target=user_target
@@ -277,9 +431,10 @@ async def run_bot():
         wanted=(callback.data or '').removeprefix('tset:')
         teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==wanted),None)
         if not teacher: raise UnknownGroup('Преподаватель не найден.')
-        data_manager.save_user_target(callback.from_user.id,'teacher:'+teacher)
+        cid=get_target_id(callback)
+        data_manager.save_user_target(cid,'teacher:'+teacher)
         await callback.message.edit_text(f'✅ Выбран преподаватель: <b>{ui.safe(teacher)}</b>',parse_mode='HTML')
-        await callback.message.answer('Расписание доступно через кнопки 👇',reply_markup=keyboards.get_main_keyboard())
+        await callback.message.answer('Расписание доступно через кнопки 👇',reply_markup=keyboards.get_main_keyboard() if callback.message.chat.type=='private' else None)
 
     @dp.callback_query(F.data.startswith('tpick:'))
     async def pick_teacher_view(callback:types.CallbackQuery):
@@ -338,9 +493,10 @@ async def run_bot():
         wanted=(callback.data or '').removeprefix('group:')
         group=next((g for g in data_manager.get_groups() if keyboards.group_id(g)==wanted),None)
         if not group: raise UnknownGroup('Группа не найдена.')
-        data_manager.save_user_group(callback.from_user.id,group)
+        cid=get_target_id(callback)
+        data_manager.save_user_target(cid,group)
         await callback.message.edit_text('✅ Группа: <b>'+ui.safe(group)+'</b>',parse_mode='HTML')
-        await callback.message.answer('Расписание доступно через кнопки 👇',reply_markup=keyboards.get_main_keyboard())
+        await callback.message.answer('Расписание доступно через кнопки 👇',reply_markup=keyboards.get_main_keyboard() if callback.message.chat.type=='private' else None)
     @dp.callback_query(F.data.startswith('day:'))
     async def navigation(callback:types.CallbackQuery):
         await callback.answer()
@@ -367,11 +523,25 @@ async def run_bot():
         await callback.answer('Вы ещё не подписались. Откройте канал и нажмите «Я подписался».',show_alert=True)
     @dp.callback_query()
     async def old_button(callback:types.CallbackQuery): await callback.answer('Кнопка от старой версии. Откройте /start.',show_alert=True)
-    @dp.message(Command('help'))
+    @dp.message(Command('help','помощь'))
     async def help_command(message:types.Message):
+        if message.chat and message.chat.type in ('group','supergroup'):
+            await message.answer(
+                '📌 <b>Команды бота в беседе:</b>\n'
+                '/today — расписание на сегодня\n'
+                '/tomorrow — на завтра\n'
+                '/week — на неделю\n'
+                '/pic — расписание недели картинкой\n'
+                '/daypic — расписание дня картинкой\n'
+                '/group ИМЯ_ГРУППЫ — установить группу для беседы',
+                parse_mode='HTML'
+            )
+            return
         await message.answer('Выберите группу или преподавателя в /start или через ⚙️ Настройки.\nДля поиска преподавателя напишите его фамилию в чат или нажмите кнопку «🔍 Преподаватель».',reply_markup=keyboards.get_main_keyboard())
     @dp.message()
     async def unknown(message:types.Message):
+        if message.chat and message.chat.type in ('group','supergroup'):
+            return
         text=(message.text or '').strip()
         if len(text)>=3:
             matches=data_manager.find_teachers(text)

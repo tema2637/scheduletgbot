@@ -121,3 +121,83 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
     buf = io.BytesIO()
     im.save(buf, format='PNG', optimize=True)
     return buf.getvalue()
+
+def render_day_image(target_name: str, day: date, is_teacher: bool = False) -> bytes:
+    BG_COLOR = (24, 25, 30)
+    CARD_BG = (34, 36, 44)
+    HEADER_ACCENT = (100, 160, 255)
+    TEXT_MAIN = (240, 243, 246)
+    TEXT_MUTED = (155, 163, 178)
+    BORDER_COLOR = (48, 52, 64)
+    TAG_TEXT = (140, 190, 255)
+
+    WIDTH = 1080
+    PAD = 40
+
+    f_title = get_font(36, bold=True)
+    f_subtitle = get_font(24, bold=False)
+    f_time = get_font(22, bold=False)
+    f_lesson = get_font(24, bold=True)
+    f_sub = get_font(20, bold=False)
+    f_footer = get_font(18, bold=False)
+
+    DAYS_RU = ['ПОНЕДЕЛЬНИК', 'ВТОРНИК', 'СРЕДА', 'ЧЕТВЕРГ', 'ПЯТНИЦА', 'СУББОТА', 'ВОСКРЕСЕНЬЕ']
+    week_num = data_manager.get_academic_week(day)
+    lessons = (data_manager.get_teacher_schedule_for_day(target_name, day) if is_teacher
+               else data_manager.get_schedule_for_day(target_name, day)) or []
+
+    slots = {}
+    for r in lessons:
+        slots.setdefault(r['TimeSlot']['NumberSlot'], []).append(r)
+
+    content_h = 50
+    if not slots:
+        content_h += 60
+    else:
+        for _, items in slots.items():
+            content_h += 50 * len(items) + 12
+
+    total_height = PAD + 90 + 20 + content_h + 60 + PAD
+    im = Image.new('RGB', (WIDTH, total_height), color=BG_COLOR)
+    draw = ImageDraw.Draw(im)
+
+    y = PAD
+    role_prefix = "Преподаватель" if is_teacher else "Группа"
+    draw.text((PAD, y), f"{role_prefix}: {target_name}", fill=TEXT_MAIN, font=f_title)
+    y += 46
+    w_info = f" • Неделя: {week_num}" if week_num > 0 else ""
+    draw.text((PAD, y), f"{DAYS_RU[day.weekday()]}, {day:%d.%m.%Y}{w_info}", fill=HEADER_ACCENT, font=f_subtitle)
+    y += 50
+
+    card_w = WIDTH - 2 * PAD
+    draw.rounded_rectangle((PAD, y, PAD + card_w, y + content_h), radius=16, fill=CARD_BG, outline=BORDER_COLOR, width=1)
+    cy = y + 25
+
+    if not slots:
+        draw.text((PAD + 30, cy + 10), "✨ На этот день в расписании занятий нет.", fill=TEXT_MUTED, font=f_subtitle)
+    else:
+        for num, items in sorted(slots.items()):
+            st = items[0]['TimeSlot']['StartTime']
+            et = items[0]['TimeSlot']['EndTime']
+            for r in items:
+                title = r['LessonTitle']
+                extra = f"[{r['Group']['Name']}]" if is_teacher else (r.get('TeacherName') or '')
+                cab = f"ауд. {r['Cabinet']}" if r.get('Cabinet') else ""
+
+                time_label = f"Пара {num}  ({st}–{et})"
+                draw.text((PAD + 25, cy), time_label, fill=TEXT_MUTED, font=f_time)
+                draw.text((PAD + 260, cy), title, fill=TEXT_MAIN, font=f_lesson)
+
+                extra_text = f"{extra}  {cab}".strip()
+                if extra_text:
+                    draw.text((PAD + 700, cy + 2), extra_text, fill=TAG_TEXT, font=f_sub)
+
+                cy += 50
+            cy += 10
+
+    footer_label = f"Расписание колледжа • {config.FOOTER_TEXT}" if config.FOOTER_TEXT else "Расписание колледжа"
+    draw.text((PAD, total_height - PAD - 20), footer_label, fill=TEXT_MUTED, font=f_footer)
+
+    buf = io.BytesIO()
+    im.save(buf, format='PNG', optimize=True)
+    return buf.getvalue()

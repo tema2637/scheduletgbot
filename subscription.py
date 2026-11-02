@@ -213,6 +213,10 @@ class SubscriptionMiddleware(BaseMiddleware):
             return await handler(event, data)
         if isinstance(inner, types.CallbackQuery) and inner.data == 'sub:check':
             return await handler(event, data)
+        if isinstance(inner, types.Message) and inner.chat.type in ('group', 'supergroup'):
+            return await handler(event, data)
+        if isinstance(inner, types.CallbackQuery) and inner.message and inner.message.chat.type in ('group', 'supergroup'):
+            return await handler(event, data)
         if await is_subscribed(user_id):
             return await handler(event, data)
         _logger.info('sub middleware: блокирую user=%s (%s)',

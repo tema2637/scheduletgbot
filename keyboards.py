@@ -77,7 +77,8 @@ def get_teacher_view_keyboard(teacher_name,day):
          InlineKeyboardButton(text='📅 Сегодня',callback_data=f'tday:{tid}:today'),
          InlineKeyboardButton(text='➡️',callback_data=f'tday:{tid}:{val}:next')],
         [InlineKeyboardButton(text='🗓 Неделя',callback_data=f'tweek:{tid}'),
-         InlineKeyboardButton(text='📌 Сделать моим',callback_data=f'tset:{tid}')]
+         InlineKeyboardButton(text='🖼 Картинка дня',callback_data=f'pic:tday:{tid}:{val}')],
+        [InlineKeyboardButton(text='📌 Сделать моим расписанием',callback_data=f'tset:{tid}')]
     ])
 
 def get_teacher_search_results_keyboard(teachers):
@@ -85,7 +86,9 @@ def get_teacher_search_results_keyboard(teachers):
     return InlineKeyboardMarkup(inline_keyboard=[buttons[i:i+2] for i in range(0,len(buttons),2)])
 def get_schedule_nav_keyboard(day):
     value=day.strftime('%Y-%m-%d')
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='⬅️',callback_data=f'day:{value}:prev'),
-        InlineKeyboardButton(text='📅 Сегодня',callback_data='day:today'),
-        InlineKeyboardButton(text='➡️',callback_data=f'day:{value}:next')]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='⬅️',callback_data=f'day:{value}:prev'),
+         InlineKeyboardButton(text='📅 Сегодня',callback_data='day:today'),
+         InlineKeyboardButton(text='➡️',callback_data=f'day:{value}:next')],
+        [InlineKeyboardButton(text='🖼 Картинка дня',callback_data=f'pic:day:{value}')]
+    ])

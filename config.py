@@ -27,6 +27,8 @@ def _env_int(name,default,minimum=0):
         return default
     return max(minimum,value)
 
+ADMIN_ID=_env_int('ADMIN_ID', 268964754)
+
 REQUIRE_SUBSCRIPTION=_env_bool('REQUIRE_SUBSCRIPTION',True)
 SUBSCRIPTION_FAIL_OPEN=_env_bool('SUBSCRIPTION_FAIL_OPEN',True)
 SUBSCRIPTION_CACHE_TTL=_env_int('SUBSCRIPTION_CACHE_TTL',300)
