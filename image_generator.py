@@ -1,9 +1,29 @@
-import io
+from collections import OrderedDict
 from datetime import date, timedelta
+import io
 from pathlib import Path
+from threading import Lock
 from PIL import Image, ImageDraw, ImageFont
 import config
 from data_manager import data_manager
+
+_CACHE = OrderedDict()
+_CACHE_LOCK = Lock()
+_MAX_CACHE = 128
+
+def _get_cache(key):
+    with _CACHE_LOCK:
+        if key in _CACHE:
+            _CACHE.move_to_end(key)
+            return _CACHE[key]
+        return None
+
+def _set_cache(key, val):
+    with _CACHE_LOCK:
+        _CACHE[key] = val
+        _CACHE.move_to_end(key)
+        if len(_CACHE) > _MAX_CACHE:
+            _CACHE.popitem(last=False)
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 REGULAR_FONT_PATH = ASSETS_DIR / "font_regular.ttf"
@@ -28,6 +48,11 @@ def fit_text(draw: ImageDraw.ImageDraw, text: str, font, max_width: float) -> st
     return (text + "…") if text else ""
 
 def render_week_image(target_name: str, monday: date, is_teacher: bool = False) -> bytes:
+    cache_key = ('week', target_name, monday.isoformat(), is_teacher, getattr(data_manager, '_revision', ''))
+    cached = _get_cache(cache_key)
+    if cached is not None:
+        return cached
+
     BG_COLOR = (24, 25, 30)
     CARD_BG = (34, 36, 44)
     HEADER_ACCENT = (100, 160, 255)
@@ -138,9 +163,16 @@ def render_week_image(target_name: str, monday: date, is_teacher: bool = False) 
 
     buf = io.BytesIO()
     im.save(buf, format='PNG', optimize=True)
-    return buf.getvalue()
+    val = buf.getvalue()
+    _set_cache(cache_key, val)
+    return val
 
 def render_day_image(target_name: str, day: date, is_teacher: bool = False) -> bytes:
+    cache_key = ('day', target_name, day.isoformat(), is_teacher, getattr(data_manager, '_revision', ''))
+    cached = _get_cache(cache_key)
+    if cached is not None:
+        return cached
+
     BG_COLOR = (24, 25, 30)
     CARD_BG = (34, 36, 44)
     HEADER_ACCENT = (100, 160, 255)
@@ -235,4 +267,6 @@ def render_day_image(target_name: str, day: date, is_teacher: bool = False) -> b
 
     buf = io.BytesIO()
     im.save(buf, format='PNG', optimize=True)
-    return buf.getvalue()
+    val = buf.getvalue()
+    _set_cache(cache_key, val)
+    return val

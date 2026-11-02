@@ -12,7 +12,7 @@ async def run_bot():
     from aiogram.client.default import DefaultBotProperties
     from aiogram.client.session.aiohttp import AiohttpSession
     from aiogram.filters import Command
-    from aiogram.exceptions import TelegramBadRequest,TelegramRetryAfter
+    from aiogram.exceptions import TelegramBadRequest,TelegramRetryAfter,TelegramForbiddenError
     from inline_handler import inline_router
     from retry import RetryRequestMiddleware
     import keyboards
@@ -234,7 +234,7 @@ async def run_bot():
         is_t=data_manager.is_teacher_target(target)
         name=data_manager.target_name(target) if is_t else target
         try:
-            png_bytes=render_week_image(name,monday,is_teacher=is_t)
+            png_bytes=await asyncio.to_thread(render_week_image,name,monday,is_teacher=is_t)
             fn=f"schedule_{name.replace(' ', '_')}_{monday:%d_%m}.png"
             friday=monday+timedelta(days=4)
             caption=f"🖼 <b>Расписание: {ui.safe(name)}</b>\n({monday:%d.%m} — {friday:%d.%m})"
@@ -254,7 +254,7 @@ async def run_bot():
         is_t=data_manager.is_teacher_target(target)
         name=data_manager.target_name(target) if is_t else target
         try:
-            png_bytes=render_day_image(name,day,is_teacher=is_t)
+            png_bytes=await asyncio.to_thread(render_day_image,name,day,is_teacher=is_t)
             fn=f"day_{name.replace(' ', '_')}_{day:%d_%m}.png"
             caption=f"🖼 <b>Расписание: {ui.safe(name)}</b> ({day:%d.%m.%Y})"
             await message.answer_photo(
@@ -550,6 +550,18 @@ async def run_bot():
         await message.answer('Используйте меню или отправьте фамилию преподавателя для поиска.',reply_markup=keyboards.get_main_keyboard())
     async def background_worker():
         last_sent_hm=''
+        async def safe_send(uid, text, reply_markup=None):
+            try:
+                await bot.send_message(uid, text, parse_mode='HTML', reply_markup=reply_markup)
+                await asyncio.sleep(0.05)
+            except TelegramForbiddenError:
+                data_manager.set_user_notify_time(uid, None)
+            except TelegramRetryAfter as exc:
+                await asyncio.sleep(exc.retry_after + 0.5)
+                try: await bot.send_message(uid, text, parse_mode='HTML', reply_markup=reply_markup)
+                except Exception: pass
+            except Exception: pass
+
         while True:
             try:
                 await asyncio.sleep(30)
@@ -562,10 +574,7 @@ async def run_bot():
                         label=f"преподавателя <b>{ui.safe(data_manager.target_name(target))}</b>" if data_manager.is_teacher_target(target) else f"группы <b>{ui.safe(target)}</b>"
                         msg=f"📢 <b>Внимание! Расписание обновилось.</b>\nВ расписании {label} произошли изменения. Нажмите «📅 Сегодня» или «🗓 Неделя», чтобы посмотреть актуальные пары."
                         for uid in users:
-                            try:
-                                await bot.send_message(uid,msg,parse_mode='HTML')
-                                await asyncio.sleep(0.05)
-                            except Exception: pass
+                            await safe_send(uid,msg)
 
                 # 2. Напоминания по времени пользователя
                 now=data_manager.now()
@@ -579,17 +588,14 @@ async def run_bot():
                         if target_day.weekday()<=4:
                             day_prefix="на завтра" if is_evening else "на сегодня"
                             for uid,target in time_users:
-                                try:
-                                    if data_manager.is_teacher_target(target):
-                                        t_name=data_manager.target_name(target)
-                                        lessons=data_manager.get_teacher_schedule_for_day(t_name,target_day)
-                                        text=f"🔔 <b>Расписание {day_prefix} ({ui.DAYS[target_day.weekday()]}, {target_day:%d.%m}):</b>\n\n"+ui.format_day_schedule(target_day,lessons,data_manager.get_academic_week(target_day),is_teacher=True,target_name=t_name)
-                                    else:
-                                        lessons=data_manager.get_schedule_for_day(target,target_day)
-                                        text=f"🔔 <b>Расписание {day_prefix} ({ui.DAYS[target_day.weekday()]}, {target_day:%d.%m}):</b>\n👥 <b>{ui.safe(target)}</b>\n\n"+ui.format_day_schedule(target_day,lessons,data_manager.get_academic_week(target_day))
-                                    await bot.send_message(uid,text,parse_mode='HTML',reply_markup=keyboards.get_main_keyboard())
-                                    await asyncio.sleep(0.05)
-                                except Exception: pass
+                                if data_manager.is_teacher_target(target):
+                                    t_name=data_manager.target_name(target)
+                                    lessons=data_manager.get_teacher_schedule_for_day(t_name,target_day)
+                                    text=f"🔔 <b>Расписание {day_prefix} ({ui.DAYS[target_day.weekday()]}, {target_day:%d.%m}):</b>\n\n"+ui.format_day_schedule(target_day,lessons,data_manager.get_academic_week(target_day),is_teacher=True,target_name=t_name)
+                                else:
+                                    lessons=data_manager.get_schedule_for_day(target,target_day)
+                                    text=f"🔔 <b>Расписание {day_prefix} ({ui.DAYS[target_day.weekday()]}, {target_day:%d.%m}):</b>\n👥 <b>{ui.safe(target)}</b>\n\n"+ui.format_day_schedule(target_day,lessons,data_manager.get_academic_week(target_day))
+                                await safe_send(uid,text,keyboards.get_main_keyboard())
             except asyncio.CancelledError: break
             except Exception as exc:
                 logging.getLogger(__name__).warning('Фоновый планировщик: %s',exc)

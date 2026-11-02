@@ -235,6 +235,10 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(d_png.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertGreater(len(d_png), 3000)
 
+        # Cache check: second call returns cached bytes instantly
+        d_png_cached = render_day_image("РЗ 252", date(2026, 11, 2))
+        self.assertIs(d_png, d_png_cached)
+
         # Teacher images
         t_png = render_week_image("Шаталов Н.А.", date(2026, 11, 2), is_teacher=True)
         self.assertTrue(t_png.startswith(b"\x89PNG\r\n\x1a\n"))
