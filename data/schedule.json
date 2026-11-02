@@ -6507,7 +6507,26 @@
     }
   },
   {
-    "LessonTitle": "МДК.01.03. (1,3,5) 207 МДК.01.02.",
+    "LessonTitle": "МДК.01.03.",
+    "TeacherName": "Буслова Н.И.",
+    "Cabinet": "207",
+    "Weeks": [
+      1,
+      3,
+      5
+    ],
+    "Group": {
+      "Name": "ИКС 251"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 1,
+      "StartTime": "14:45",
+      "EndTime": "16:15"
+    }
+  },
+  {
+    "LessonTitle": "МДК.01.02.",
     "TeacherName": "Буслова Н.И.",
     "Cabinet": "207",
     "Weeks": [
@@ -8770,8 +8789,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -8796,7 +8815,27 @@
     }
   },
   {
-    "LessonTitle": "МДК.06.01.(2,4,8,9) МДК.05.01.",
+    "LessonTitle": "МДК.06.01.",
+    "TeacherName": "Солодовник Н.Н.",
+    "Cabinet": "212л",
+    "Weeks": [
+      2,
+      4,
+      8,
+      9
+    ],
+    "Group": {
+      "Name": "ИКС 233"
+    },
+    "TimeSlot": {
+      "NumberSlot": 1,
+      "DayOfWeek": 2,
+      "StartTime": "08:30",
+      "EndTime": "10:00"
+    }
+  },
+  {
+    "LessonTitle": "МДК.05.01.",
     "TeacherName": "Солодовник Н.Н.",
     "Cabinet": "212л",
     "Weeks": [
@@ -8858,6 +8897,23 @@
       5,
       6,
       7
+    ],
+    "Group": {
+      "Name": "ИКС 234"
+    },
+    "TimeSlot": {
+      "NumberSlot": 1,
+      "DayOfWeek": 2,
+      "StartTime": "08:30",
+      "EndTime": "10:00"
+    }
+  },
+  {
+    "LessonTitle": "МДК05.01.",
+    "TeacherName": "Кожина",
+    "Cabinet": "210л",
+    "Weeks": [
+      10
     ],
     "Group": {
       "Name": "ИКС 234"
@@ -10665,8 +10721,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -12595,6 +12651,23 @@
     }
   },
   {
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
+    "Cabinet": "210л",
+    "Weeks": [
+      10
+    ],
+    "Group": {
+      "Name": "ИКС 232"
+    },
+    "TimeSlot": {
+      "NumberSlot": 3,
+      "DayOfWeek": 2,
+      "StartTime": "12:10",
+      "EndTime": "13:40"
+    }
+  },
+  {
     "LessonTitle": "МДК.02.01.",
     "TeacherName": "Михайленко Т.В.",
     "Cabinet": "218л",
@@ -12621,8 +12694,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -13124,7 +13197,29 @@
     }
   },
   {
-    "LessonTitle": "Физика (2,6,8,10,12,16) 404 ПД",
+    "LessonTitle": "Физика",
+    "TeacherName": "Минаева Т.В.",
+    "Cabinet": "404",
+    "Weeks": [
+      2,
+      6,
+      8,
+      10,
+      12,
+      16
+    ],
+    "Group": {
+      "Name": "ИКС 262"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 2,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "ПД",
     "TeacherName": "Минаева Т.В.",
     "Cabinet": "404",
     "Weeks": [
@@ -13148,7 +13243,31 @@
     }
   },
   {
-    "LessonTitle": "Математика (1,3,5,7,9,10,12,17) 233 Информатика",
+    "LessonTitle": "Математика",
+    "TeacherName": "Сапрыкина А.А.",
+    "Cabinet": "233",
+    "Weeks": [
+      1,
+      3,
+      5,
+      7,
+      9,
+      10,
+      12,
+      17
+    ],
+    "Group": {
+      "Name": "ИКС 263"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 2,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "Информатика",
     "TeacherName": "Сапрыкина А.А.",
     "Cabinet": "233",
     "Weeks": [
@@ -14447,8 +14566,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.06.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.06.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -14473,8 +14592,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.06.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.06.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -16168,7 +16287,7 @@
   },
   {
     "LessonTitle": "История России",
-    "TeacherName": "Шишкина",
+    "TeacherName": "Шишкина Е Б.",
     "Cabinet": "416",
     "Weeks": [
       1,
@@ -17734,7 +17853,7 @@
   },
   {
     "LessonTitle": "История",
-    "TeacherName": "Шишкина",
+    "TeacherName": "Шишкина Е Б.",
     "Cabinet": "416",
     "Weeks": [
       1,
@@ -18647,8 +18766,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -20398,8 +20517,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -20424,8 +20543,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -21573,7 +21692,29 @@
     }
   },
   {
-    "LessonTitle": "МДК.01.04. (1,3,5,7,9,11) 202л МДК.01.03.",
+    "LessonTitle": "МДК.01.04.",
+    "TeacherName": "Артемов С.В.",
+    "Cabinet": "202л",
+    "Weeks": [
+      1,
+      3,
+      5,
+      7,
+      9,
+      11
+    ],
+    "Group": {
+      "Name": "ИП 242"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 3,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "МДК.01.03.",
     "TeacherName": "Артемов С.В.",
     "Cabinet": "202л",
     "Weeks": [
@@ -22379,9 +22520,27 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01.(8,9) Кожина 302 Ин.язык",
-    "TeacherName": "Рахимова А.Л.",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина",
     "Cabinet": "210л",
+    "Weeks": [
+      8,
+      9
+    ],
+    "Group": {
+      "Name": "ИКС 235"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 3,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "Ин.язык",
+    "TeacherName": "Рахимова А.Л.",
+    "Cabinet": "302",
     "Weeks": [
       12,
       13
@@ -28608,7 +28767,24 @@
     }
   },
   {
-    "LessonTitle": "МДК.03.02.(4) 315 Систем.электр.",
+    "LessonTitle": "МДК.03.02.",
+    "TeacherName": "Киркоров О.Р.",
+    "Cabinet": "315",
+    "Weeks": [
+      4
+    ],
+    "Group": {
+      "Name": "Р 232"
+    },
+    "TimeSlot": {
+      "NumberSlot": 3,
+      "DayOfWeek": 4,
+      "StartTime": "13:00",
+      "EndTime": "14:30"
+    }
+  },
+  {
+    "LessonTitle": "Систем.электр.",
     "TeacherName": "Киркоров О.Р.",
     "Cabinet": "315",
     "Weeks": [
@@ -29235,7 +29411,31 @@
     }
   },
   {
-    "LessonTitle": "Информатика(3,5,7,8, 10,13,15,17) 233 Математика",
+    "LessonTitle": "Информатика",
+    "TeacherName": "Сапрыкина А.А.",
+    "Cabinet": "233",
+    "Weeks": [
+      3,
+      5,
+      7,
+      8,
+      10,
+      13,
+      15,
+      17
+    ],
+    "Group": {
+      "Name": "РЗ 262"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 4,
+      "StartTime": "14:40",
+      "EndTime": "16:10"
+    }
+  },
+  {
+    "LessonTitle": "Математика",
     "TeacherName": "Сапрыкина А.А.",
     "Cabinet": "233",
     "Weeks": [
@@ -30385,7 +30585,29 @@
     }
   },
   {
-    "LessonTitle": "МДК.01.03. (1,3,5,7,9,17) 202л МДК.01.04.",
+    "LessonTitle": "МДК.01.03.",
+    "TeacherName": "Артемов С.В.",
+    "Cabinet": "202л",
+    "Weeks": [
+      1,
+      3,
+      5,
+      7,
+      9,
+      17
+    ],
+    "Group": {
+      "Name": "ИП 246"
+    },
+    "TimeSlot": {
+      "NumberSlot": 5,
+      "DayOfWeek": 4,
+      "StartTime": "16:20",
+      "EndTime": "17:50"
+    }
+  },
+  {
+    "LessonTitle": "МДК.01.04.",
     "TeacherName": "Артемов С.В.",
     "Cabinet": "202л",
     "Weeks": [
@@ -31793,8 +32015,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -31871,8 +32093,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -32891,7 +33113,34 @@
     }
   },
   {
-    "LessonTitle": "ПКП в ПД (1-8,12,15,17) 311 Общ.энерг.",
+    "LessonTitle": "ПКП в ПД",
+    "TeacherName": "Шаталов Н.А.",
+    "Cabinet": "311",
+    "Weeks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      12,
+      15,
+      17
+    ],
+    "Group": {
+      "Name": "РЗ 252"
+    },
+    "TimeSlot": {
+      "NumberSlot": 2,
+      "DayOfWeek": 5,
+      "StartTime": "10:10",
+      "EndTime": "11:40"
+    }
+  },
+  {
+    "LessonTitle": "Общ.энерг.",
     "TeacherName": "Шаталов Н.А.",
     "Cabinet": "311",
     "Weeks": [
@@ -33648,8 +33897,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.06.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.06.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -35535,8 +35784,8 @@
     }
   },
   {
-    "LessonTitle": "МДК.05.01. Кожина Е Н.",
-    "TeacherName": "",
+    "LessonTitle": "МДК.05.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
     "Weeks": [
       1,
@@ -35859,7 +36108,26 @@
     }
   },
   {
-    "LessonTitle": "Обществоз. (1,3,9) 419 История",
+    "LessonTitle": "Обществоз.",
+    "TeacherName": "Черкашина Е.А.",
+    "Cabinet": "419",
+    "Weeks": [
+      1,
+      3,
+      9
+    ],
+    "Group": {
+      "Name": "ИКС 263"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 5,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "История",
     "TeacherName": "Черкашина Е.А.",
     "Cabinet": "419",
     "Weeks": [
@@ -36644,7 +36912,33 @@
     }
   },
   {
-    "LessonTitle": "МДК.01.02. (1-6,8,10,12,14) 207 МДК.01.03.",
+    "LessonTitle": "МДК.01.02.",
+    "TeacherName": "Буслова Н.И.",
+    "Cabinet": "207",
+    "Weeks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      14
+    ],
+    "Group": {
+      "Name": "ИКС 242"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 5,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "МДК.01.03.",
     "TeacherName": "Буслова Н.И.",
     "Cabinet": "207",
     "Weeks": [
@@ -37068,9 +37362,33 @@
     }
   },
   {
-    "LessonTitle": "МДК.06.01. (1-4,6,7,10,11) Кожина Е Н. Физ.культура",
-    "TeacherName": "Кобзев М.В.",
+    "LessonTitle": "МДК.06.01.",
+    "TeacherName": "Кожина Е Н.",
     "Cabinet": "210л",
+    "Weeks": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      7,
+      10,
+      11
+    ],
+    "Group": {
+      "Name": "ИКС 234"
+    },
+    "TimeSlot": {
+      "NumberSlot": 4,
+      "DayOfWeek": 5,
+      "StartTime": "13:50",
+      "EndTime": "15:20"
+    }
+  },
+  {
+    "LessonTitle": "Физ.культура",
+    "TeacherName": "Кобзев М.В.",
+    "Cabinet": "",
     "Weeks": [
       13
     ],
@@ -37278,7 +37596,28 @@
     }
   },
   {
-    "LessonTitle": "МДК.01.04. (1,3,5,7,11) 202л МДК.01.02.",
+    "LessonTitle": "МДК.01.04.",
+    "TeacherName": "Артемов С.В.",
+    "Cabinet": "202л",
+    "Weeks": [
+      1,
+      3,
+      5,
+      7,
+      11
+    ],
+    "Group": {
+      "Name": "ИП 245"
+    },
+    "TimeSlot": {
+      "NumberSlot": 5,
+      "DayOfWeek": 5,
+      "StartTime": "15:30",
+      "EndTime": "17:00"
+    }
+  },
+  {
+    "LessonTitle": "МДК.01.02.",
     "TeacherName": "Артемов С.В.",
     "Cabinet": "202л",
     "Weeks": [
@@ -37300,7 +37639,31 @@
     }
   },
   {
-    "LessonTitle": "МДК.01.04. (1,3,5,7,9,11,13,15) 202л МДК.01.02.",
+    "LessonTitle": "МДК.01.04.",
+    "TeacherName": "Артемов С.В.",
+    "Cabinet": "202л",
+    "Weeks": [
+      1,
+      3,
+      5,
+      7,
+      9,
+      11,
+      13,
+      15
+    ],
+    "Group": {
+      "Name": "ИП 246"
+    },
+    "TimeSlot": {
+      "NumberSlot": 5,
+      "DayOfWeek": 5,
+      "StartTime": "15:30",
+      "EndTime": "17:00"
+    }
+  },
+  {
+    "LessonTitle": "МДК.01.02.",
     "TeacherName": "Артемов С.В.",
     "Cabinet": "202л",
     "Weeks": [

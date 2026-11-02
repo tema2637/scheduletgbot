@@ -36,7 +36,8 @@ async def run_bot():
         for i,part in enumerate(parts):
             await message.answer(part,parse_mode='HTML',reply_markup=keyboard if i==len(parts)-1 else None)
     async def choose(message):
-        await message.answer('Выберите специальность:',reply_markup=keyboards.get_group_prefixes_keyboard())
+        uid=message.from_user.id if message.from_user else None
+        await message.answer('⚙️ <b>Настройки расписания</b>\nКто вы?',reply_markup=keyboards.get_settings_keyboard(uid),parse_mode='HTML')
 
     @dp.errors()
     async def errors_handler(event:types.ErrorEvent):
@@ -48,7 +49,7 @@ async def run_bot():
         if message is None and event.update.callback_query: message=event.update.callback_query.message
         if isinstance(message,types.Message):
             if isinstance(exc,ScheduleUnavailable): text=UNAVAILABLE
-            elif isinstance(exc,UnknownGroup): text='Группа не найдена. Откройте настройки и выберите её заново.'
+            elif isinstance(exc,UnknownGroup): text='Группа или преподаватель не найдены. Откройте настройки и выберите заново.'
             elif isinstance(exc,TelegramRetryAfter): text='Telegram ограничил отправку. Попробуйте чуть позже.'
             else: text='Не удалось выполнить действие. Попробуйте позже. Ошибка не означает, что занятий нет.'
             try: await message.answer(text)
@@ -63,24 +64,34 @@ async def run_bot():
             if not await subscription.is_subscribed(message.from_user.id):
                 return await message.answer(subscription.sub_text(),parse_mode='HTML',reply_markup=subscription.subscribe_keyboard())
             return await choose(message)
-        group=data_manager.get_user_group(message.from_user.id)
-        if group:
-            await message.answer('👋 «Опять пары»\nГруппа: <b>'+ui.safe(group)+'</b>',reply_markup=keyboards.get_main_keyboard())
+        target=data_manager.get_user_target(message.from_user.id)
+        if target:
+            if data_manager.is_teacher_target(target):
+                label='Преподаватель: <b>'+ui.safe(data_manager.target_name(target))+'</b>'
+            else:
+                label='Группа: <b>'+ui.safe(target)+'</b>'
+            await message.answer('👋 «Опять пары»\n'+label,reply_markup=keyboards.get_main_keyboard(),parse_mode='HTML')
         else:
             if not await subscription.is_subscribed(message.from_user.id):
                 await message.answer(subscription.sub_text(),parse_mode='HTML',reply_markup=subscription.subscribe_keyboard())
                 return
-            await message.answer('👋 Привет! Выберите свою группу.')
+            await message.answer('👋 Привет! Выберите свою группу или преподавателя.')
             await choose(message)
 
     async def show_day(event,target):
         callback=isinstance(event,types.CallbackQuery)
         message=event.message if callback else event
         if not isinstance(message,types.Message) or not event.from_user: return
-        group=data_manager.get_user_group(event.from_user.id)
-        if not group: return await choose(message)
-        lessons=data_manager.get_schedule_for_day(group,target)
-        text='👥 <b>'+ui.safe(group)+'</b>\n'+ui.format_day_schedule(target,lessons,data_manager.get_academic_week(target))+data_manager.status_note()
+        user_target=data_manager.get_user_target(event.from_user.id)
+        if not user_target: return await choose(message)
+        if data_manager.is_teacher_target(user_target):
+            t_name=data_manager.target_name(user_target)
+            lessons=data_manager.get_teacher_schedule_for_day(t_name,target)
+            text=ui.format_day_schedule(target,lessons,data_manager.get_academic_week(target),is_teacher=True,target_name=t_name)+data_manager.status_note()
+        else:
+            group=user_target
+            lessons=data_manager.get_schedule_for_day(group,target)
+            text='👥 <b>'+ui.safe(group)+'</b>\n'+ui.format_day_schedule(target,lessons,data_manager.get_academic_week(target))+data_manager.status_note()
         keyboard=keyboards.get_schedule_nav_keyboard(target)
         if not callback: return await send_chunks(message,text,keyboard)
         parts=ui.split_messages(text)
@@ -96,16 +107,217 @@ async def run_bot():
     async def tomorrow(message:types.Message): await show_day(message,data_manager.now()+timedelta(days=1))
     async def show_week(message,following=False):
         if not message.from_user: return
-        group=data_manager.get_user_group(message.from_user.id)
-        if not group: return await choose(message)
+        user_target=data_manager.get_user_target(message.from_user.id)
+        if not user_target: return await choose(message)
         now=data_manager.now(); monday=now-timedelta(days=now.weekday())+timedelta(weeks=int(following))
-        await send_chunks(message,data_manager.get_week_text(group,monday),keyboards.get_main_keyboard())
+        if data_manager.is_teacher_target(user_target):
+            text=data_manager.get_teacher_week_text(data_manager.target_name(user_target),monday)
+        else:
+            text=data_manager.get_week_text(user_target,monday)
+        pic_kb=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text='🖼 Картинка недели',callback_data='pic:next' if following else 'pic:cur')]])
+        await send_chunks(message,text,pic_kb)
     @dp.message(F.text=='🗓 Неделя')
     async def week(message:types.Message): await show_week(message)
     @dp.message(F.text=='📆 След. неделя')
     async def next_week(message:types.Message): await show_week(message,True)
     @dp.message(F.text=='⚙️ Настройки')
     async def settings(message:types.Message): await choose(message)
+
+    async def send_schedule_image(event,target,monday):
+        from image_generator import render_week_image
+        callback=isinstance(event,types.CallbackQuery)
+        message=event.message if callback else event
+        is_t=data_manager.is_teacher_target(target)
+        name=data_manager.target_name(target) if is_t else target
+        try:
+            png_bytes=render_week_image(name,monday,is_teacher=is_t)
+            fn=f"schedule_{name.replace(' ', '_')}_{monday:%d_%m}.png"
+            friday=monday+timedelta(days=4)
+            caption=f"🖼 <b>Расписание: {ui.safe(name)}</b>\n({monday:%d.%m} — {friday:%d.%m})"
+            await message.answer_photo(
+                photo=types.BufferedInputFile(png_bytes,filename=fn),
+                caption=caption,
+                parse_mode='HTML'
+            )
+        except Exception as exc:
+            if callback: await event.answer('Не удалось сформировать картинку.')
+            else: await handle_error(message,exc)
+
+    @dp.message(Command('pic','photo','image'))
+    async def cmd_pic(message:types.Message):
+        if not message.from_user: return
+        user_target=data_manager.get_user_target(message.from_user.id)
+        if not user_target: return await choose(message)
+        now=data_manager.now(); monday=now-timedelta(days=now.weekday())
+        await send_schedule_image(message,user_target,monday)
+
+    @dp.callback_query(F.data.startswith('pic:'))
+    async def callback_pic(callback:types.CallbackQuery):
+        await callback.answer('Генерирую картинку...')
+        if not callback.from_user: return
+        user_target=data_manager.get_user_target(callback.from_user.id)
+        parts=(callback.data or '').split(':')
+        now=data_manager.now()
+        if len(parts)>=2 and parts[1]=='next':
+            monday=now-timedelta(days=now.weekday())+timedelta(weeks=1)
+            target=user_target
+        elif len(parts)>=4 and parts[1]=='t':
+            tid=parts[2]
+            teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==tid),None)
+            if not teacher: return
+            target='teacher:'+teacher
+            monday=datetime.strptime(parts[3],'%Y-%m-%d').date()
+        else:
+            monday=now-timedelta(days=now.weekday())
+            target=user_target
+        if not target: return await choose(callback.message)
+        await send_schedule_image(callback,target,monday)
+
+    @dp.message(F.text=='🔍 Преподаватель')
+    @dp.message(Command('teacher','t'))
+    async def teacher_search_entry(message:types.Message):
+        parts=(message.text or '').split(maxsplit=1)
+        if len(parts)>1 and parts[0].startswith('/'):
+            return await do_teacher_search(message,parts[1].strip())
+        await message.answer(
+            '🔍 <b>Поиск преподавателя</b>\n\n'
+            'Напишите фамилию преподавателя в чат (например: <code>Шаталов</code> или <code>Денисенко</code>)\n'
+            'или выберите по первой букве фамилии:',
+            reply_markup=keyboards.get_teacher_buckets_keyboard(back_callback=None),
+            parse_mode='HTML'
+        )
+
+    async def do_teacher_search(message:types.Message,query:str):
+        matches=data_manager.find_teachers(query)
+        if not matches:
+            return await message.answer(f'Преподаватель по запросу «{ui.safe(query)}» не найден.\nПроверьте написание фамилии.')
+        if len(matches)==1:
+            return await show_searched_teacher(message,matches[0],data_manager.now())
+        await message.answer(
+            f'Найдено несколько преподавателей по запросу «{ui.safe(query)}»:\nВыберите нужного:',
+            reply_markup=keyboards.get_teacher_search_results_keyboard(matches)
+        )
+
+    async def show_searched_teacher(event,teacher_name:str,target):
+        callback=isinstance(event,types.CallbackQuery)
+        message=event.message if callback else event
+        lessons=data_manager.get_teacher_schedule_for_day(teacher_name,target)
+        text=ui.format_day_schedule(target,lessons,data_manager.get_academic_week(target),is_teacher=True,target_name=teacher_name)+data_manager.status_note()
+        keyboard=keyboards.get_teacher_view_keyboard(teacher_name,target)
+        if not callback: return await send_chunks(message,text,keyboard)
+        parts=ui.split_messages(text)
+        try: await message.edit_text(parts[0],parse_mode='HTML',reply_markup=keyboard if len(parts)==1 else None)
+        except TelegramBadRequest as exc:
+            if 'message is not modified' not in str(exc).lower(): raise
+        for i,part in enumerate(parts[1:],1):
+            await message.answer(part,parse_mode='HTML',reply_markup=keyboard if i==len(parts)-1 else None)
+
+    @dp.callback_query(F.data=='set:student')
+    async def set_student(callback:types.CallbackQuery):
+        await callback.answer()
+        if isinstance(callback.message,types.Message):
+            await callback.message.edit_text('Выберите специальность:',reply_markup=keyboards.get_group_prefixes_keyboard())
+
+    @dp.callback_query(F.data=='set:teacher')
+    async def set_teacher(callback:types.CallbackQuery):
+        await callback.answer()
+        if isinstance(callback.message,types.Message):
+            await callback.message.edit_text('👨‍🏫 <b>Выберите преподавателя</b> по первой букве фамилии:',reply_markup=keyboards.get_teacher_buckets_keyboard(),parse_mode='HTML')
+
+    @dp.callback_query(F.data=='set:back')
+    async def set_back(callback:types.CallbackQuery):
+        await callback.answer()
+        if isinstance(callback.message,types.Message):
+            uid=callback.from_user.id if callback.from_user else None
+            await callback.message.edit_text('⚙️ <b>Настройки расписания</b>\nКто вы?',reply_markup=keyboards.get_settings_keyboard(uid),parse_mode='HTML')
+
+    @dp.callback_query(F.data=='set:time_menu')
+    async def time_menu(callback:types.CallbackQuery):
+        await callback.answer()
+        if isinstance(callback.message,types.Message):
+            await callback.message.edit_text(
+                '⏰ <b>Настройка времени напоминания</b>\n\n'
+                '• <b>Вечерние</b> (18:00–22:00): присылают расписание на <b>завтра</b>\n'
+                '• <b>Утренние</b> (07:00–08:00): присылают расписание на <b>сегодня</b>\n\n'
+                'Выберите удобное время:',
+                reply_markup=keyboards.get_notify_time_keyboard(),
+                parse_mode='HTML'
+            )
+
+    @dp.callback_query(F.data.startswith('nt:'))
+    async def set_notify_time(callback:types.CallbackQuery):
+        if not callback.from_user or not isinstance(callback.message,types.Message): return
+        val=(callback.data or '').removeprefix('nt:')
+        uid=callback.from_user.id
+        if val=='off':
+            data_manager.set_user_notify_time(uid,None)
+            await callback.answer('🔕 Напоминания выключены.',show_alert=True)
+        else:
+            data_manager.set_user_notify_time(uid,val)
+            await callback.answer(f'🔔 Напоминание установлено на {val}!',show_alert=True)
+        try:
+            await callback.message.edit_text(
+                '⚙️ <b>Настройки расписания</b>\nКто вы?',
+                reply_markup=keyboards.get_settings_keyboard(uid),
+                parse_mode='HTML'
+            )
+        except TelegramBadRequest: pass
+
+    @dp.callback_query(F.data.startswith('tb:'))
+    async def pick_bucket(callback:types.CallbackQuery):
+        await callback.answer()
+        if not isinstance(callback.message,types.Message): return
+        idx=int((callback.data or '').removeprefix('tb:'))
+        await callback.message.edit_text('Выберите преподавателя:',reply_markup=keyboards.get_teachers_by_bucket_keyboard(idx))
+
+    @dp.callback_query(F.data.startswith('tset:'))
+    async def pick_teacher_save(callback:types.CallbackQuery):
+        await callback.answer()
+        if not isinstance(callback.message,types.Message): return
+        wanted=(callback.data or '').removeprefix('tset:')
+        teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==wanted),None)
+        if not teacher: raise UnknownGroup('Преподаватель не найден.')
+        data_manager.save_user_target(callback.from_user.id,'teacher:'+teacher)
+        await callback.message.edit_text(f'✅ Выбран преподаватель: <b>{ui.safe(teacher)}</b>',parse_mode='HTML')
+        await callback.message.answer('Расписание доступно через кнопки 👇',reply_markup=keyboards.get_main_keyboard())
+
+    @dp.callback_query(F.data.startswith('tpick:'))
+    async def pick_teacher_view(callback:types.CallbackQuery):
+        await callback.answer()
+        if not isinstance(callback.message,types.Message): return
+        wanted=(callback.data or '').removeprefix('tpick:')
+        teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==wanted),None)
+        if not teacher: raise UnknownGroup('Преподаватель не найден.')
+        await show_searched_teacher(callback,teacher,data_manager.now())
+
+    @dp.callback_query(F.data.startswith('tday:'))
+    async def teacher_day_nav(callback:types.CallbackQuery):
+        await callback.answer()
+        parts=(callback.data or '').split(':')
+        try:
+            tid=parts[1]
+            teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==tid),None)
+            if not teacher: raise UnknownGroup('Преподаватель не найден.')
+            if len(parts)==3 and parts[2]=='today': target=data_manager.now()
+            elif len(parts)==4 and parts[3] in ['prev','next']:
+                target=datetime.strptime(parts[2],'%Y-%m-%d')+timedelta(days=1 if parts[3]=='next' else -1)
+            else: raise ValueError('Неверная кнопка.')
+        except (ValueError,OverflowError,IndexError):
+            if isinstance(callback.message,types.Message): await callback.message.answer('Кнопка устарела.')
+            return
+        await show_searched_teacher(callback,teacher,target)
+
+    @dp.callback_query(F.data.startswith('tweek:'))
+    async def teacher_week_view(callback:types.CallbackQuery):
+        await callback.answer()
+        if not isinstance(callback.message,types.Message): return
+        wanted=(callback.data or '').removeprefix('tweek:')
+        teacher=next((t for t in data_manager.get_teachers() if keyboards.teacher_id(t)==wanted),None)
+        if not teacher: raise UnknownGroup('Преподаватель не найден.')
+        now=data_manager.now(); monday=now-timedelta(days=now.weekday())
+        text=data_manager.get_teacher_week_text(teacher,monday)
+        pic_kb=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text='🖼 Картинка недели',callback_data=f'pic:t:{wanted}:{monday:%Y-%m-%d}')]])
+        await send_chunks(callback.message,text,pic_kb)
 
     @dp.callback_query(F.data.startswith('prefix:'))
     async def pick_prefix(callback:types.CallbackQuery):
@@ -118,7 +330,7 @@ async def run_bot():
     @dp.callback_query(F.data=='prefixes')
     async def back(callback:types.CallbackQuery):
         await callback.answer()
-        if isinstance(callback.message,types.Message): await choose(callback.message)
+        if isinstance(callback.message,types.Message): await callback.message.edit_text('Выберите специальность:',reply_markup=keyboards.get_group_prefixes_keyboard())
     @dp.callback_query(F.data.startswith('group:'))
     async def pick_group(callback:types.CallbackQuery):
         await callback.answer()
@@ -157,12 +369,67 @@ async def run_bot():
     async def old_button(callback:types.CallbackQuery): await callback.answer('Кнопка от старой версии. Откройте /start.',show_alert=True)
     @dp.message(Command('help'))
     async def help_command(message:types.Message):
-        await message.answer('Выберите группу в /start. Inline: @имя_бота сегодня / завтра / неделя / следующая неделя. Если inline не включён, используйте /setinline в BotFather.',reply_markup=keyboards.get_main_keyboard())
+        await message.answer('Выберите группу или преподавателя в /start или через ⚙️ Настройки.\nДля поиска преподавателя напишите его фамилию в чат или нажмите кнопку «🔍 Преподаватель».',reply_markup=keyboards.get_main_keyboard())
     @dp.message()
-    async def unknown(message:types.Message): await message.answer('Используйте меню или /help.',reply_markup=keyboards.get_main_keyboard())
+    async def unknown(message:types.Message):
+        text=(message.text or '').strip()
+        if len(text)>=3:
+            matches=data_manager.find_teachers(text)
+            if matches:
+                return await do_teacher_search(message,text)
+        await message.answer('Используйте меню или отправьте фамилию преподавателя для поиска.',reply_markup=keyboards.get_main_keyboard())
+    async def background_worker():
+        last_sent_hm=''
+        while True:
+            try:
+                await asyncio.sleep(30)
+                # 1. Проверка обновления файла расписания
+                has_changed,changed_targets=data_manager.check_and_reload()
+                if has_changed and changed_targets:
+                    for target in changed_targets:
+                        users=data_manager.get_users_by_target(target)
+                        if not users: continue
+                        label=f"преподавателя <b>{ui.safe(data_manager.target_name(target))}</b>" if data_manager.is_teacher_target(target) else f"группы <b>{ui.safe(target)}</b>"
+                        msg=f"📢 <b>Внимание! Расписание обновилось.</b>\nВ расписании {label} произошли изменения. Нажмите «📅 Сегодня» или «🗓 Неделя», чтобы посмотреть актуальные пары."
+                        for uid in users:
+                            try:
+                                await bot.send_message(uid,msg,parse_mode='HTML')
+                                await asyncio.sleep(0.05)
+                            except Exception: pass
+
+                # 2. Напоминания по времени пользователя
+                now=data_manager.now()
+                cur_hm=now.strftime('%H:%M')
+                if last_sent_hm!=cur_hm:
+                    last_sent_hm=cur_hm
+                    time_users=data_manager.get_users_for_time(cur_hm)
+                    if time_users:
+                        is_evening=cur_hm>='12:00'
+                        target_day=(now+timedelta(days=1)).date() if is_evening else now.date()
+                        if target_day.weekday()<=4:
+                            day_prefix="на завтра" if is_evening else "на сегодня"
+                            for uid,target in time_users:
+                                try:
+                                    if data_manager.is_teacher_target(target):
+                                        t_name=data_manager.target_name(target)
+                                        lessons=data_manager.get_teacher_schedule_for_day(t_name,target_day)
+                                        text=f"🔔 <b>Расписание {day_prefix} ({ui.DAYS[target_day.weekday()]}, {target_day:%d.%m}):</b>\n\n"+ui.format_day_schedule(target_day,lessons,data_manager.get_academic_week(target_day),is_teacher=True,target_name=t_name)
+                                    else:
+                                        lessons=data_manager.get_schedule_for_day(target,target_day)
+                                        text=f"🔔 <b>Расписание {day_prefix} ({ui.DAYS[target_day.weekday()]}, {target_day:%d.%m}):</b>\n👥 <b>{ui.safe(target)}</b>\n\n"+ui.format_day_schedule(target_day,lessons,data_manager.get_academic_week(target_day))
+                                    await bot.send_message(uid,text,parse_mode='HTML',reply_markup=keyboards.get_main_keyboard())
+                                    await asyncio.sleep(0.05)
+                                except Exception: pass
+            except asyncio.CancelledError: break
+            except Exception as exc:
+                logging.getLogger(__name__).warning('Фоновый планировщик: %s',exc)
+
+    bg_task=asyncio.create_task(background_worker())
     try:
         await dp.start_polling(bot,allowed_updates=dp.resolve_used_update_types(),close_bot_session=False)
-    finally: await bot.session.close()
+    finally:
+        bg_task.cancel()
+        await bot.session.close()
 
 class SafeFormatter(logging.Formatter):
     def format(self,record):

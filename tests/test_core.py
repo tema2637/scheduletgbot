@@ -30,7 +30,7 @@ class CoreTests(unittest.TestCase):
     def test_active_schedule_is_valid(self):
         data = json.loads((ROOT / "data" / "schedule.json").read_text(encoding="utf-8"))
         self.assertEqual(len(validate(data)), len(data))
-        self.assertEqual(len(data), 1504)
+        self.assertEqual(len(data), 1521)
         self.assertEqual(len({row["Group"]["Name"] for row in data}), 49)
 
     def test_active_schedule_uses_new_monday_times(self):
@@ -69,7 +69,7 @@ class CoreTests(unittest.TestCase):
         records, report = parse_file(ROOT / "imports" / "Расписание-2.xlsx")
         self.assertEqual(report["errors"], [])
         self.assertEqual(report["source_cells"], 1029)
-        self.assertEqual(len(records), 1504)
+        self.assertEqual(len(records), 1521)
         self.assertEqual(len(report["source_sha256"]), 64)
 
     def test_validate_rejects_slot_time_drift(self):
@@ -93,6 +93,38 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(len(lessons), 1)
         self.assertEqual(lessons[0]["Cabinet"], "410")
+
+    def test_multiple_lessons_in_one_cell_are_split(self):
+        lessons = parse_cell(
+            "311 ПКП в ПД (1-8,12,15,17) 311 Общ.энерг.(14,16) "
+            "Шаталов Н.А. Физ.кул.(9-11,13) Кобзев",
+            "РЗ 252", 5, 2, {"Шаталов Н.А."}, {"Шаталов", "Кобзев"},
+        )
+        self.assertEqual(
+            [(x["LessonTitle"], x["TeacherName"], x["Cabinet"], x["Weeks"])
+             for x in lessons],
+            [
+                ("ПКП в ПД", "Шаталов Н.А.", "311",
+                 [1, 2, 3, 4, 5, 6, 7, 8, 12, 15, 17]),
+                ("Общ.энерг.", "Шаталов Н.А.", "311", [14, 16]),
+                ("Физ.кул.", "Кобзев", "", [9, 10, 11, 13]),
+            ],
+        )
+
+    def test_multiple_subjects_before_one_teacher_are_split(self):
+        lessons = parse_cell(
+            "207 МДК.01.03. (1,3,5) 207 МДК.01.02. (2,4,6-12,14) Буслова Н.И.",
+            "ИКС 251", 1, 4, {"Буслова Н.И."}, {"Буслова"},
+        )
+        self.assertEqual(
+            [(x["LessonTitle"], x["TeacherName"], x["Cabinet"], x["Weeks"])
+             for x in lessons],
+            [
+                ("МДК.01.03.", "Буслова Н.И.", "207", [1, 3, 5]),
+                ("МДК.01.02.", "Буслова Н.И.", "207",
+                 [2, 4, 6, 7, 8, 9, 10, 11, 12, 14]),
+            ],
+        )
 
     def test_invalid_paren_does_not_become_weeks(self):
         subject, weeks, room = extract_from_segment("Математика (305) (1-5)")
@@ -125,6 +157,83 @@ class CoreTests(unittest.TestCase):
 
     def test_html_escape(self):
         self.assertEqual(safe("A&B <b>"), "A&amp;B &lt;b&gt;")
+
+    def test_teacher_search_and_schedule(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DataManager(
+                schedule_path=ROOT / "data" / "schedule.json",
+                db_path=Path(directory) / "users.db",
+            )
+            teachers = manager.get_teachers()
+            self.assertGreater(len(teachers), 50)
+            self.assertIn("Шаталов Н.А.", teachers)
+
+            # Search by substring
+            shatalov = manager.find_teachers("шатал")
+            self.assertEqual(shatalov, ["Шаталов Н.А."])
+
+            # Teacher schedule on Monday week 10 (2026-11-02)
+            lessons = manager.get_teacher_schedule_for_day("Шаталов Н.А.", date(2026, 11, 2))
+            self.assertEqual(len(lessons), 3)
+            self.assertEqual(lessons[0]["LessonTitle"], "ПКП в ПД")
+            self.assertEqual(lessons[0]["Group"]["Name"], "РЗ 252")
+
+            # Save and load teacher target
+            manager.save_user_target(999, "teacher:Шаталов Н.А.")
+            self.assertEqual(manager.get_user_target(999), "teacher:Шаталов Н.А.")
+            self.assertTrue(manager.is_teacher_target("teacher:Шаталов Н.А."))
+            self.assertEqual(manager.target_name("teacher:Шаталов Н.А."), "Шаталов Н.А.")
+
+            # Teacher week text
+            week_text = manager.get_teacher_week_text("Шаталов Н.А.", date(2026, 11, 2))
+            self.assertIn("ПРЕПОДАВАТЕЛЬ: Шаталов Н.А.", week_text)
+            self.assertIn("РЗ 252", week_text)
+
+    def test_notify_settings_and_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DataManager(
+                schedule_path=ROOT / "data" / "schedule.json",
+                db_path=Path(directory) / "users.db",
+            )
+            # Default is False / None
+            self.assertFalse(manager.get_user_notify(123))
+            self.assertIsNone(manager.get_user_notify_time(123))
+
+            # Enable notify with specific time
+            manager.save_user_target(123, "РЗ 252")
+            manager.set_user_notify_time(123, "19:00")
+            self.assertTrue(manager.get_user_notify(123))
+            self.assertEqual(manager.get_user_notify_time(123), "19:00")
+
+            # Users for time
+            users_19 = manager.get_users_for_time("19:00")
+            self.assertEqual(users_19, [(123, "РЗ 252")])
+            self.assertEqual(manager.get_users_for_time("20:00"), [])
+
+            # Disable notify
+            manager.set_user_notify_time(123, None)
+            self.assertFalse(manager.get_user_notify(123))
+            self.assertIsNone(manager.get_user_notify_time(123))
+
+            # Users by target
+            users = manager.get_users_by_target("РЗ 252")
+            self.assertEqual(users, [123])
+
+            # check_and_reload when unchanged
+            has_changed, changed = manager.check_and_reload()
+            self.assertFalse(has_changed)
+            self.assertEqual(changed, set())
+
+    def test_render_week_image(self):
+        from image_generator import render_week_image
+        png = render_week_image("РЗ 252", date(2026, 11, 2))
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(png), 5000)
+
+        # Teacher image
+        t_png = render_week_image("Шаталов Н.А.", date(2026, 11, 2), is_teacher=True)
+        self.assertTrue(t_png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(t_png), 5000)
 
 
 class SubscriptionCacheTests(unittest.IsolatedAsyncioTestCase):

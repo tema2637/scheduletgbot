@@ -14,7 +14,8 @@ GROUPS_ROW = 4
 GROUPS_COL = 2
 
 RE_TEACHER_FULL = re.compile(
-    r'[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ]\.\s?[А-ЯЁ]?\.?'
+    r'[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+'
+    r'(?:[А-ЯЁ]\.\s?[А-ЯЁ]?\.?|[А-ЯЁ]\s+[А-ЯЁ]\.)'
 )
 
 RE_SURNAME_WORD = re.compile(r'\b([А-ЯЁ][а-яё]{3,})\b')
@@ -158,6 +159,29 @@ def is_subgroup_segment(seg: str) -> bool:
     # Только аудитория (3 цифры + буква) + возможные слэши/пробелы
     return bool(re.fullmatch(r"\d{3}[а-яё]?", clean))
 
+def _lesson_units(block: str) -> tuple[list[tuple[str, list[int], str]], int]:
+    """
+    Делит один блок перед преподавателем на занятия по скобкам недель.
+    В одном блоке может быть несколько предметов с разными неделями
+    (например, «ПКП в ПД (1-8…) 311 Общ.энерг.(14,16)»).
+    """
+    matches: list[tuple[re.Match[str], list[int]]] = []
+    for paren in RE_WEEKS_PAREN.finditer(block):
+        try:
+            weeks = parse_weeks(paren.group(1))
+        except ValueError:
+            continue
+        matches.append((paren, weeks))
+
+    units: list[tuple[str, list[int], str]] = []
+    cursor = 0
+    for paren, weeks in matches:
+        subject, _, room = extract_from_segment(block[cursor:paren.start()])
+        units.append((subject, weeks, room))
+        cursor = paren.end()
+    return units, cursor
+
+
 def parse_cell(
     raw_text: str,
     group_name: str,
@@ -173,11 +197,11 @@ def parse_cell(
     teachers = find_teachers(text, full_names, surnames)
 
     if not teachers:
-        # Нет преподавателей — пробуем вытащить хоть что-то
-        subj, weeks, room = extract_from_segment(text)
-        if weeks and subj:
-            return [_make(subj, "", room, weeks, group_name, day_num, lesson_num)]
-        return []
+        units, _ = _lesson_units(text)
+        return [
+            _make(subj, "", room, weeks, group_name, day_num, lesson_num)
+            for subj, weeks, room in units if subj
+        ]
 
     lessons: list[dict] = []
     # Базовый предмет/недели для наследования подгруппами
@@ -186,34 +210,54 @@ def parse_cell(
     prev_end = 0
 
     for t_start, t_end, t_name in teachers:
-        seg = text[prev_end:t_start]
+        block = text[prev_end:t_start]
         prev_end = t_end
 
-        if is_subgroup_segment(seg) and base_subject and base_weeks:
+        units, cursor = _lesson_units(block)
+        if len(units) == 1:
+            # Одно занятие: сохраняем прежнее извлечение целиком, чтобы не
+            # потерять текст после скобок недель (подгруппы, пометки).
+            subj, weeks, room = extract_from_segment(block)
+            units = [(subj, weeks, room)]
+            cursor = len(block)
+        if units:
+            # ── Обычные занятия (возможно несколько в одном блоке) ──
+            block_room = ""
+            for subj, weeks, room in units:
+                if not subj:
+                    subj = base_subject
+                if not subj:
+                    continue
+                if room:
+                    block_room = room
+                elif block_room:
+                    room = block_room
+                lessons.append(_make(subj, t_name, room, weeks,
+                                     group_name, day_num, lesson_num))
+                base_subject = subj
+                base_weeks = weeks
+
+            tail = block[cursor:].strip(" ;/,-")
+            if tail:
+                _, tail_weeks, tail_room = extract_from_segment(tail)
+                last = lessons[-1]
+                if tail_room and not last["Cabinet"]:
+                    last["Cabinet"] = tail_room
+                if tail_weeks and not last["Weeks"]:
+                    last["Weeks"] = tail_weeks
+        elif is_subgroup_segment(block) and base_subject and base_weeks:
             # ── Подгруппа ───────────────────────────────────────────
             room = ""
-            m = RE_ROOM.search(seg.strip(" /;.,"))
+            m = RE_ROOM.search(block.strip(" /;.,"))
             if m:
                 room = m.group(1)
             lessons.append(_make(base_subject, t_name, room, base_weeks,
                                  group_name, day_num, lesson_num))
         else:
-            # ── Обычное занятие ─────────────────────────────────────
-            subj, weeks, room = extract_from_segment(seg)
-
-            if not weeks:
-                # Нет недель — запоминаем предмет как возможную базу и пропускаем
-                if subj:
-                    base_subject = subj
-                continue
-
-            if not subj:
-                subj = base_subject   # берём предмет от предыдущего сегмента
-
-            lessons.append(_make(subj, t_name, room, weeks,
-                                 group_name, day_num, lesson_num))
-            base_subject = subj
-            base_weeks = weeks
+            # Нет недель — запоминаем предмет как возможную базу и пропускаем
+            subj, _, _ = extract_from_segment(block)
+            if subj:
+                base_subject = subj
 
     tail = text[prev_end:].strip(" ;/,-")
     if tail and lessons:
