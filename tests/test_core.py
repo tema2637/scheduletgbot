@@ -36,7 +36,7 @@ class CoreTests(unittest.TestCase):
         }
         expected = {
             (1, "09:25", "10:55"),
-            (2, "11:05", "12:35"),
+            (2, "11:25", "12:55"),
             (3, "13:05", "14:35"),
             (4, "14:45", "16:15"),
             (5, "16:25", "17:55"),
@@ -46,6 +46,7 @@ class CoreTests(unittest.TestCase):
 
     def test_parser_uses_new_monday_times(self):
         self.assertEqual(TIME_SLOTS[1][1], ("09:25", "10:55"))
+        self.assertEqual(TIME_SLOTS[1][2], ("11:25", "12:55"))
         self.assertEqual(TIME_SLOTS[1][6], ("18:05", "19:35"))
 
     def test_week_ranges(self):
