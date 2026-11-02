@@ -1,75 +1,17 @@
 """CSV/XLSX-импорт сетки расписания колледжа."""
 import csv
+import hashlib
 import re
 import json
 from pathlib import Path
 from collections import defaultdict
 
 
-CSV_FILE   = "Расписание-2.csv"
-
-JSON_FILE  = "schedule.json"
+from times import ALL_DAYS, DAYS, TIME_SLOTS
 
 GROUPS_ROW = 4
 
 GROUPS_COL = 2
-
-DAYS = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА"]
-
-# Служебные мероприятия не меняют номера обычных пар.
-SPECIAL_EVENTS: dict[int, list[tuple[str, str, str]]] = {
-    1: [
-        ("Поднятие Государственного флага Российской Федерации", "08:15", "08:25"),
-        ("Разговоры о важном", "08:30", "09:15"),
-    ],
-    4: [("Организационный / классный час", "12:10", "12:55")],
-}
-
-TIME_SLOTS: dict[int, dict[int, tuple[str, str]]] = {
-    1: {  # ПОНЕДЕЛЬНИК
-        1: ("09:25", "10:55"),
-        2: ("11:25", "12:55"),
-        3: ("13:05", "14:35"),
-        4: ("14:45", "16:15"),
-        5: ("16:25", "17:55"),
-        6: ("18:05", "19:35"),
-    },
-    2: {  # ВТОРНИК
-        1: ("08:30", "10:00"),
-        2: ("10:10", "11:40"),
-        3: ("12:10", "13:40"),
-        4: ("13:50", "15:20"),
-        5: ("15:30", "17:00"),
-        6: ("17:10", "18:40"),
-        7: ("18:50", "20:20"),
-    },
-    3: {  # СРЕДА (совпадает с вторником/пятницей)
-        1: ("08:30", "10:00"),
-        2: ("10:10", "11:40"),
-        3: ("12:10", "13:40"),
-        4: ("13:50", "15:20"),
-        5: ("15:30", "17:00"),
-        6: ("17:10", "18:40"),
-        7: ("18:50", "20:20"),
-    },
-    4: {  # ЧЕТВЕРГ (орг.час после 2-й пары, 3-я пара сдвинута)
-        1: ("08:30", "10:00"),
-        2: ("10:10", "11:40"),
-        3: ("13:00", "14:30"),
-        4: ("14:40", "16:10"),
-        5: ("16:20", "17:50"),
-        6: ("18:00", "19:30"),
-    },
-    5: {  # ПЯТНИЦА (совпадает с вторником/средой)
-        1: ("08:30", "10:00"),
-        2: ("10:10", "11:40"),
-        3: ("12:10", "13:40"),
-        4: ("13:50", "15:20"),
-        5: ("15:30", "17:00"),
-        6: ("17:10", "18:40"),
-        7: ("18:50", "20:20"),
-    },
-}
 
 RE_TEACHER_FULL = re.compile(
     r'[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ]\.\s?[А-ЯЁ]?\.?'
@@ -77,7 +19,7 @@ RE_TEACHER_FULL = re.compile(
 
 RE_SURNAME_WORD = re.compile(r'\b([А-ЯЁ][а-яё]{3,})\b')
 
-RE_WEEKS_PAREN = re.compile(r'\((\d[\d,.\-\s]*)\)')
+RE_WEEKS_PAREN = re.compile(r'\(\s*(\d[\d,;.\-–—−\s]*)\)')
 
 RE_ROOM = re.compile(r'(?<![.\d])(\d{3}[а-яё]?)(?!\.\d)(?!\d)')
 
@@ -171,10 +113,14 @@ def extract_from_segment(seg: str) -> tuple[str, list[int], str]:
     weeks: list[int] = []
     weeks_span: tuple[int, int] | None = None
 
-    if digit_parens:
-        last = digit_parens[-1]
-        weeks = parse_weeks(last.group(1))
-        weeks_span = (last.start(), last.end())
+    for paren in reversed(digit_parens):
+        try:
+            candidate = parse_weeks(paren.group(1))
+        except ValueError:
+            continue
+        weeks = candidate
+        weeks_span = (paren.start(), paren.end())
+        break
 
     # Маска: удаляем недели и аудиторию, чтобы получить предмет
     mask = list(seg)
@@ -269,6 +215,15 @@ def parse_cell(
             base_subject = subj
             base_weeks = weeks
 
+    tail = text[prev_end:].strip(" ;/,-")
+    if tail and lessons:
+        _, tail_weeks, tail_room = extract_from_segment(tail)
+        last = lessons[-1]
+        if tail_room and not last["Cabinet"]:
+            last["Cabinet"] = tail_room
+        if tail_weeks and not last["Weeks"]:
+            last["Weeks"] = tail_weeks
+
     return lessons
 
 def _make(subject, teacher, room, weeks, group, day, lesson):
@@ -304,8 +259,14 @@ def collect_cells(
             continue
 
         day_str = row[0].strip().upper()
-        if day_str in DAYS:
+        if day_str in ALL_DAYS:
+            if day_str not in DAYS:
+                raise ValueError(
+                    f'День {day_str} найден в источнике, но не поддержан в TIME_SLOTS. '
+                    'Добавьте звонки для субботы/воскресенья или уберите эти строки.'
+                )
             cur_day = DAYS.index(day_str)
+            cur_lesson = None
 
         if len(row) > 1 and row[1].strip().isdigit():
             cur_lesson = int(row[1].strip())
@@ -323,7 +284,6 @@ def collect_cells(
 
     return {k: " ".join(" ".join(v).split()) for k, v in cells.items()}
 
-RE_WEEKS_PAREN=re.compile(r'\(\s*(\d[\d,;.\-\s–—−]*)\)')
 def parse_weeks(text):
     text=text.replace('–','-').replace('—','-').replace('−','-')
     text=re.sub(r'\s*-\s*','-',text.strip())
@@ -393,7 +353,20 @@ def parse_file(path,sheet=None):
         except (ValueError,TypeError,KeyError,IndexError) as exc:
             errors.append(tag+': '+str(exc))
     if not result: errors.append('Не получено ни одного корректного занятия.')
-    return result,{'format':fmt,'source_name':Path(path).name,'source_cells':len(cells),'records':len(result),'errors':errors}
+    groups_with_lessons={r['Group']['Name'] for r in result}
+    empty_groups=sorted({g for g in groups if g and g not in groups_with_lessons})
+    warnings=[]
+    if empty_groups:
+        warnings.append('Группы без занятий: '+', '.join(empty_groups))
+    return result,{
+        'format':fmt,
+        'source_name':Path(path).name,
+        'source_sha256':hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        'source_cells':len(cells),
+        'records':len(result),
+        'errors':errors,
+        'warnings':warnings,
+    }
 
 def main(argv=None):
     import argparse
@@ -410,12 +383,15 @@ def main(argv=None):
         target=args.output.resolve(); report=(args.report or target.parent/'last_import_report.json').resolve()
         if target==args.input.resolve() or report in {target,args.input.resolve()}: raise ValueError('Источник, результат и отчёт должны быть разными файлами.')
         records,info=parse_file(args.input,args.sheet)
-        atomic_json(report,info)
-        print(f'{info["format"]}: {len(records)} записей; ошибок: {len(info["errors"])}. Отчёт: {report}')
+        if not args.check:
+            atomic_json(report,info)
+        print(f'{info["format"]}: {len(records)} записей; ошибок: {len(info["errors"])}.')
+        for warning in info.get('warnings',[]): print('~ '+warning)
         for error in info['errors'][:10]: print('! '+error)
         if not records or (info['errors'] and not args.allow_partial):
             print('Расписание НЕ изменено. Исправьте источник; частичный импорт только через --allow-partial.'); return 2
-        if args.check: print('Проверка завершена; расписание не изменено.'); return 0
+        if args.check: print('Проверка завершена; расписание и отчёт не изменены.'); return 0
+        print('Отчёт: '+str(report))
         publish(target,records); print('Опубликовано: '+str(target))
         if info['errors']: print('ВНИМАНИЕ: опубликовано НЕПОЛНОЕ расписание по --allow-partial.')
         return 0

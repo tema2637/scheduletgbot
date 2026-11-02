@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import os
 import tempfile
+from times import TIME_SLOTS
 
 def validate(data):
     if not isinstance(data,list) or not data:
@@ -28,13 +29,24 @@ def validate(data):
         r['Weeks']=sorted(set(weeks))
         slot=r.get('TimeSlot')
         if not isinstance(slot,dict): raise ValueError(f'Запись {number}: нет TimeSlot.')
-        if type(slot.get('DayOfWeek')) is not int or not 1<=slot['DayOfWeek']<=7: raise ValueError('Неверный день недели.')
-        if type(slot.get('NumberSlot')) is not int or not 1<=slot['NumberSlot']<=12: raise ValueError('Неверный номер пары.')
+        day=slot.get('DayOfWeek')
+        lesson=slot.get('NumberSlot')
+        if type(day) is not int or not 1<=day<=7: raise ValueError('Неверный день недели.')
+        if type(lesson) is not int or not 1<=lesson<=12: raise ValueError('Неверный номер пары.')
+        expected=TIME_SLOTS.get(day,{}).get(lesson)
+        if expected is None:
+            raise ValueError(f'Запись {number}: для дня {day} пары {lesson} нет звонков в TIME_SLOTS.')
         times=[]
         for key in ['StartTime','EndTime']:
             v=slot.get(key,'')
             if not isinstance(v,str) or len(v)!=5 or v[2]!=':': raise ValueError(f'Запись {number}: проверьте время звонков {key}.')
             times.append(time.fromisoformat(v))
+        actual=(slot.get('StartTime'),slot.get('EndTime'))
+        if actual!=expected:
+            raise ValueError(
+                f'Запись {number}: время пары {day}/{lesson} {actual[0]}–{actual[1]} '
+                f'не совпадает с TIME_SLOTS {expected[0]}–{expected[1]}.'
+            )
         if times[1]<=times[0]: raise ValueError(f'Запись {number}: конец пары должен быть позже начала.')
         result.append(r)
     return result

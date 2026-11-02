@@ -5,8 +5,8 @@ from data_manager import data_manager
 
 def group_id(value): return hashlib.sha256(value.encode()).hexdigest()[:16]
 def prefix(value):
-    m=re.match(r'[^0-9]+',value)
-    return (m.group(0) if m else value).strip(' -–—')
+    m=re.match(r'^\d*([^\d]+)',value)
+    return (m.group(1) if m else value).strip(' -–—')
 def get_main_keyboard():
     return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=t) for t in row] for row in [['📅 Сегодня','⏭ Завтра'],['🗓 Неделя','📆 След. неделя'],['⚙️ Настройки']]],resize_keyboard=True)
 def get_group_prefixes_keyboard():

@@ -47,7 +47,12 @@ python main.py
 | Переменная | Назначение | Значение по умолчанию |
 | --- | --- | --- |
 | `BOT_TOKEN` | токен Telegram-бота | обязательна для запуска |
-| `CHANNEL` | имя публичного канала без `https://t.me/` | проверка отключена |
+| `CHANNEL` | `@username` или числовой ID канала | проверка отключена |
+| `CHANNEL_URL` | ссылка на канал, если нет username | пусто |
+| `REQUIRE_SUBSCRIPTION` | включить проверку подписки | `true` |
+| `SUBSCRIPTION_CACHE_TTL` | кэш положительной проверки, сек | `300` |
+| `SUBSCRIPTION_NEGATIVE_TTL` | кэш отрицательной проверки, сек | `30` |
+| `SUBSCRIPTION_FAIL_OPEN` | пускать при сетевой ошибке проверки | `true` |
 | `PROXY` | прокси для Telegram API | не используется |
 | `FOOTER_TEXT` | необязательная подпись под расписанием | пусто |
 | `FOOTER_URL` | ссылка для подписи | пусто |
@@ -57,6 +62,8 @@ python main.py
 | `SEMESTER_END` | последний день семестра | определяется по JSON |
 | `SCHEDULE_PATH` | путь к расписанию | `data/schedule.json` |
 | `DB_PATH` | путь к SQLite с настройками пользователей | `data/users.db` |
+| `LOG_MAX_BYTES` | размер файла журнала до ротации | `5242880` |
+| `LOG_BACKUP_COUNT` | число архивных копий журнала | `5` |
 
 ## Обновление расписания
 
@@ -72,7 +79,7 @@ python schedule_parser.py "imports/Расписание-2.xlsx" --check
 python schedule_parser.py "imports/Расписание-2.xlsx"
 ```
 
-Парсер пишет отчёт в `data/last_import_report.json` и не заменяет рабочий JSON при ошибках. Время звонков задаётся в `TIME_SLOTS` внутри `schedule_parser.py`.
+При публикации парсер пишет отчёт в `data/last_import_report.json`; `--check` не меняет ни расписание, ни отчёт. Время звонков задаётся в `times.py`; `storage.validate` сверяет с ним каждый слот, поэтому ручная правка времени в JSON не пройдёт проверку.
 
 ## Inline-режим
 
@@ -94,6 +101,20 @@ python schedule_parser.py "imports/Расписание-2.xlsx"
 
 Перед обновлением на сервере сохраните резервную копию `data/users.db`.
 
+## Тестовый экземпляр
+
+Для проверки новой версии рядом с рабочим ботом используйте отдельную папку и отдельного бота:
+
+```bash
+cp -a /config/schedule_bot /config/schedule_bot_test
+cd /config/schedule_bot_test
+# в .env: новый BOT_TOKEN, CHANNEL="", REQUIRE_SUBSCRIPTION=false,
+# DB_PATH=data/users_test.db, SCHEDULE_PATH=data/schedule.json
+LOCK_FILE=.bot.lock PYTHON=/config/venv/bin/python ./start_bot.sh
+```
+
+Не запускайте два процесса с одним и тем же `BOT_TOKEN`: Telegram вернёт конфликт polling. `start_bot.sh` использует `flock`, чтобы второй экземпляр в той же папке не стартовал.
+
 ## Проверки
 
 ```bash
@@ -112,6 +133,7 @@ CI запускает те же проверки для Python 3.10 и 3.12.
 ├── tests/                      # тесты без обращения к Telegram
 ├── main.py                     # запуск бота
 ├── schedule_parser.py          # импорт CSV/XLSX
+├── times.py                    # единый источник времени звонков
 ├── config.py                   # чтение .env
 └── .env.example                # пример конфигурации
 ```

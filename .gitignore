@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.log.*
+data/users.db
+data/users.db-*
+data/last_import_report.json
+.bot.lock
+.DS_Store

@@ -1,5 +1,4 @@
 from collections import defaultdict
-from copy import deepcopy
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from threading import RLock
@@ -7,6 +6,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+import time
 import config
 from storage import validate
 
@@ -23,8 +23,9 @@ class DataManager:
         self.week1_monday=config.WEEK1_MONDAY
         self.semester_end=config.SEMESTER_END
         self._schedule=[]; self._index={}; self._groups=[]
-        self._signature=None; self._revision=''; self._error=None; self._max_week=0
-        self._updated=None; self._lock=RLock()
+        self._signature=None; self._last_bad_signature=None; self._retry_after=0.0
+        self._revision=''; self._error=None; self._max_week=0
+        self._updated=None; self._lock=RLock(); self._db_initialized=False
     def now(self): return datetime.now(config.TZ)
     def local_date(self,value):
         if isinstance(value,datetime):
@@ -34,13 +35,22 @@ class DataManager:
         return (self.local_date(value)-self.week1_monday).days//7+1
     def _check_reload(self,force=False):
         with self._lock:
+            now=time.monotonic()
             try:
                 stat=self.schedule_path.stat()
                 signature=(stat.st_mtime_ns,stat.st_size)
-                if not force and signature==self._signature:
-                    if not self._schedule: raise ScheduleUnavailable(UNAVAILABLE)
-                    return
-                self._signature=signature
+            except OSError as exc:
+                self._error=type(exc).__name__
+                logger.warning('Расписание не обновлено: %s',type(exc).__name__)
+                if not self._schedule: raise ScheduleUnavailable(UNAVAILABLE) from exc
+                return
+            if not force and signature==self._signature:
+                if not self._schedule: raise ScheduleUnavailable(UNAVAILABLE)
+                return
+            if not force and signature==self._last_bad_signature and now<self._retry_after:
+                if not self._schedule: raise ScheduleUnavailable(UNAVAILABLE)
+                return
+            try:
                 if stat.st_size>20*1024*1024: raise ValueError('JSON превышает 20 МБ.')
                 raw=self.schedule_path.read_bytes()
                 if len(raw)>20*1024*1024: raise ValueError('JSON превышает 20 МБ.')
@@ -49,15 +59,21 @@ class DataManager:
                 for r in records:
                     for w in r['Weeks']:
                         index[(r['Group']['Name'],r['TimeSlot']['DayOfWeek'],w)].append(r)
-                self._schedule=records; self._index=dict(index)
+                self._schedule=records
+                self._index=dict(index)
                 self._groups=sorted({r['Group']['Name'] for r in records})
                 self._max_week=max(w for r in records for w in r['Weeks'])
                 self._revision=hashlib.sha256(raw).hexdigest()[:16]
                 self._updated=datetime.fromtimestamp(stat.st_mtime,config.TZ)
                 self._error=None
+                self._signature=signature
+                self._last_bad_signature=None
+                self._retry_after=0.0
             except ScheduleUnavailable: raise
             except (OSError,ValueError,TypeError,KeyError) as exc:
-                if isinstance(exc,OSError): self._signature=None
+                self._signature=None
+                self._last_bad_signature=signature
+                self._retry_after=now+5
                 self._error=type(exc).__name__
                 logger.warning('Расписание не обновлено: %s',type(exc).__name__)
                 if not self._schedule: raise ScheduleUnavailable(UNAVAILABLE) from exc
@@ -69,7 +85,9 @@ class DataManager:
         if group not in self._groups: raise UnknownGroup('Группы больше нет в расписании. Выберите её заново.')
         end=self.semester_end or self.week1_monday+timedelta(weeks=self._max_week,days=-1)
         if target<self.semester_start or target>end: return None
-        records=deepcopy(self._index.get((group,target.isoweekday(),self.get_academic_week(target)),[]))
+        week=self.get_academic_week(target)
+        if week<1 or week>self._max_week: return None
+        records=self._index.get((group,target.isoweekday(),week),[])
         return sorted(records,key=lambda r:r['TimeSlot']['NumberSlot'])
     def get_schedule_for_day(self,group,value):
         self._check_reload()
@@ -81,14 +99,27 @@ class DataManager:
             text=ui_templates.format_week_schedule(start,self._from_current,group,self.get_academic_week(start))
             return text+self.status_note()
     def status_note(self):
-        note=''
-        if self._error:
-            note+='\n\n⚠️ Показана последняя корректная версия: обновление не удалось. Уточните возможные изменения.'
-        return note
+        with self._lock:
+            note=''
+            if self._error:
+                note+='\n\n⚠️ Показана последняя корректная версия: обновление не удалось. Уточните возможные изменения.'
+            return note
+    def _ensure_db(self):
+        if self._db_initialized: return
+        with self._lock:
+            if self._db_initialized: return
+            self.db_path.parent.mkdir(parents=True,exist_ok=True)
+            c=sqlite3.connect(self.db_path,timeout=5)
+            try:
+                c.execute('PRAGMA journal_mode=WAL')
+                c.execute('CREATE TABLE IF NOT EXISTS user_preferences(user_id INTEGER PRIMARY KEY,group_name TEXT)')
+                c.commit()
+            finally: c.close()
+            self._db_initialized=True
     def _connect(self):
-        self.db_path.parent.mkdir(parents=True,exist_ok=True)
+        self._ensure_db()
         c=sqlite3.connect(self.db_path,timeout=5)
-        c.execute('CREATE TABLE IF NOT EXISTS user_preferences(user_id INTEGER PRIMARY KEY,group_name TEXT)')
+        c.execute('PRAGMA busy_timeout=5000')
         return c
     def get_user_group(self,user_id):
         c=self._connect()

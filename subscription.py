@@ -1,52 +1,74 @@
 """Гейт подписки на канал. Подключается в main.py через init() + middleware.
 
-Использование:
-    import subscription
-    subscription.init(bot, config.CHANNEL)
-    dp.update.middleware(subscription.SubscriptionMiddleware())
+Проверка отключается пустым CHANNEL или REQUIRE_SUBSCRIPTION=false.
+Результаты кэшируются: положительные и отрицательные.
 """
+import html
 import logging
 import time
 from aiogram import types
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
+import config
 
 _logger = logging.getLogger(__name__)
 _BOT = None
 _CHANNEL_ID = ''
-_CACHE = {}          # user_id -> (expires_ts, True); кэшируем только подписку
-_CACHE_TTL = 0.0     # сек: 0 = проверяем при КАЖДОМ действии, отписка видна мгновенно
+_ENABLED = False
+_CACHE = {}  # user_id -> (expires_ts, bool)
+_CACHE_TTL = config.SUBSCRIPTION_CACHE_TTL
+_NEGATIVE_TTL = config.SUBSCRIPTION_NEGATIVE_TTL
+_CACHE_LIMIT = 10000
 
 
-def init(bot, channel):
-    global _BOT, _CHANNEL_ID
+def init(bot, channel, require=None):
+    global _BOT, _CHANNEL_ID, _ENABLED
     _BOT = bot
     ch = (channel or '').strip()
     if ch and not ch.startswith('@') and not ch.lstrip('-').isdigit():
         ch = '@' + ch
     _CHANNEL_ID = ch
-    _logger.info('subscription init: channel=%r', _CHANNEL_ID)
+    enabled = config.REQUIRE_SUBSCRIPTION if require is None else bool(require)
+    _ENABLED = bool(enabled and ch)
+    _CACHE.clear()
+    _logger.info('subscription init: channel=%r enabled=%s', _CHANNEL_ID, _ENABLED)
 
 
 def channel_username():
-    return _CHANNEL_ID[1:] if _CHANNEL_ID.startswith('@') else _CHANNEL_ID
+    return _CHANNEL_ID[1:] if _CHANNEL_ID.startswith('@') else ''
 
 
 def channel_url():
-    return 'https://t.me/' + channel_username()
+    override = config.CHANNEL_URL.strip()
+    if override.startswith(('https://', 'http://')):
+        return override
+    if channel_username():
+        return 'https://t.me/' + channel_username()
+    return ''
 
 
 def sub_text():
+    url = channel_url()
+    if url:
+        link = '<a href="' + html.escape(url, quote=True) + '">' + html.escape(
+            channel_username() or url, quote=False
+        ) + '</a>'
+        return ('👋 <b>Добро пожаловать!</b>\n\n'
+                'Чтобы пользоваться ботом, подпишитесь на наш канал:\n'
+                '🔗 ' + link + '\n\n'
+                'После подписки нажмите <b>«Я подписался»</b>.')
     return ('👋 <b>Добро пожаловать!</b>\n\n'
-            'Чтобы пользоваться ботом, подпишитесь на наш канал:\n'
-            '🔗 <a href="' + channel_url() + '">t.me/' + channel_username() + '</a>\n\n'
+            'Чтобы пользоваться ботом, подпишитесь на наш канал.\n'
+            'Ссылку на канал можно получить у администратора.\n\n'
             'После подписки нажмите <b>«Я подписался»</b>.')
 
 
 def subscribe_keyboard():
-    return types.InlineKeyboardMarkup(inline_keyboard=[[
-        types.InlineKeyboardButton(text='📢 Открыть канал', url=channel_url()),
-        types.InlineKeyboardButton(text='✅ Я подписался', callback_data='sub:check'),
-    ]])
+    url = channel_url()
+    buttons = []
+    if url:
+        buttons.append(types.InlineKeyboardButton(text='📢 Открыть канал', url=url))
+    buttons.append(types.InlineKeyboardButton(text='✅ Я подписался', callback_data='sub:check'))
+    return types.InlineKeyboardMarkup(inline_keyboard=[buttons])
 
 
 def _normalize(event):
@@ -70,36 +92,82 @@ def _user_id(event):
     return None
 
 
-async def is_subscribed(user_id):
-    if not _CHANNEL_ID:
+def _prune():
+    if len(_CACHE) <= _CACHE_LIMIT:
+        return
+    now = time.time()
+    for user_id, (expires, _) in list(_CACHE.items()):
+        if expires <= now:
+            _CACHE.pop(user_id, None)
+    if len(_CACHE) > _CACHE_LIMIT:
+        _CACHE.clear()
+
+
+def _store(user_id, ok):
+    ttl = _CACHE_TTL if ok else _NEGATIVE_TTL
+    if ttl > 0:
+        _CACHE[user_id] = (time.time() + ttl, ok)
+    else:
+        _CACHE.pop(user_id, None)
+    _prune()
+
+
+async def is_subscribed(user_id, force=False):
+    if not _ENABLED:
         return True
     bot = _BOT
     if bot is None:
-        return True
-    cached = _CACHE.get(user_id)
-    if cached and cached[0] > time.time():
-        _logger.debug('sub check: user=%s OK (cache)', user_id)
-        return True
+        return not config.REQUIRE_SUBSCRIPTION
+    if not force:
+        cached = _CACHE.get(user_id)
+        if cached and cached[0] > time.time():
+            return cached[1]
     try:
         member = await bot.get_chat_member(_CHANNEL_ID, user_id)
-        ok = member.status not in ('left', 'kicked')
-        if ok:
-            _CACHE[user_id] = (time.time() + _CACHE_TTL, True)
-        else:
-            _CACHE.pop(user_id, None)
+        ok = member.status in ('member', 'administrator', 'creator')
+        if member.status == 'restricted':
+            ok = bool(getattr(member, 'is_member', False))
+        _store(user_id, ok)
         _logger.info('sub check: user=%s channel=%s status=%s -> %s',
                      user_id, _CHANNEL_ID, member.status, ok)
         return ok
-    except Exception as exc:  # бот не админ / канал недоступен
+    except Exception as exc:
         text = str(exc).lower()
         if any(v in text for v in ('user not found', 'user is not a participant',
-                                   'chat admin required')):
-            _CACHE.pop(user_id, None)
+                                   'chat admin required', 'participant_id_invalid')):
+            _store(user_id, False)
             _logger.warning('sub check: user=%s НЕ подписан (tg: %s)', user_id, text)
             return False
         _logger.error('sub check: user=%s ошибка проверки подписки: %s',
                       user_id, exc, exc_info=True)
+        # Сетевой сбой не должен полностью останавливать бота. Политика
+        # настраивается: fail-open по умолчанию, fail-closed через .env.
+        if config.SUBSCRIPTION_FAIL_OPEN:
+            _store(user_id, True)
+            return True
+        return False
+
+
+async def check_configuration():
+    """Проверяет, что бот видит канал и является его администратором."""
+    if not _ENABLED:
         return True
+    if _BOT is None:
+        return False
+    try:
+        me = await _BOT.get_me()
+        member = await _BOT.get_chat_member(_CHANNEL_ID, me.id)
+    except Exception:
+        _logger.exception('Не удалось проверить канал %s', _CHANNEL_ID)
+        return False
+    ok = member.status in ('administrator', 'creator')
+    if not ok:
+        _logger.error(
+            'Бот не администратор канала %s (status=%s). '
+            'Добавьте бота администратором или отключите проверку подписки.',
+            _CHANNEL_ID, member.status,
+        )
+    return ok
 
 
 async def _block(event):
@@ -120,8 +188,11 @@ async def _block(event):
                 pass
     elif isinstance(event, types.InlineQuery):
         try:
-            await event.answer([], button=types.InlineQueryResultsButton(
-                text='Подпишитесь на канал', url=channel_url()), cache_time=1, is_personal=True)
+            url = channel_url()
+            button = (types.InlineQueryResultsButton(text='Подпишитесь на канал', url=url)
+                      if url else
+                      types.InlineQueryResultsButton(text='Открыть бота', start_parameter='select_group'))
+            await event.answer([], button=button, cache_time=1, is_personal=True)
         except Exception:
             pass
     else:
@@ -129,16 +200,10 @@ async def _block(event):
 
 
 class SubscriptionMiddleware(BaseMiddleware):
-    """Проверяет подписку на каждый апдейт. Отписался — блокирует.
-
-    ВАЖНО: event здесь — объект Update. Его НЕЛЬЗЯ заменять на внутренний
-    объект при передаче в handler: dispatcher._listen_update читает
-    update.event_type у оригинала. Внутренний объект достаём только
-    для проверки user_id и блокировки.
-    """
+    """Проверяет подписку на каждый апдейт. Отписался — блокирует."""
 
     async def __call__(self, handler, event, data):
-        if not _CHANNEL_ID:
+        if not _ENABLED:
             return await handler(event, data)
         inner = _normalize(event)
         user_id = _user_id(inner)
@@ -146,7 +211,6 @@ class SubscriptionMiddleware(BaseMiddleware):
             _logger.warning('sub middleware: нет user_id в %r — пропускаем',
                             type(event).__name__)
             return await handler(event, data)
-        # self-check кнопки «Я подписался» всегда пропускаем к хендлеру
         if isinstance(inner, types.CallbackQuery) and inner.data == 'sub:check':
             return await handler(event, data)
         if await is_subscribed(user_id):
@@ -154,4 +218,4 @@ class SubscriptionMiddleware(BaseMiddleware):
         _logger.info('sub middleware: блокирую user=%s (%s)',
                      user_id, type(inner).__name__)
         await _block(inner)
-        return False  # хендлер не вызываем
+        return False

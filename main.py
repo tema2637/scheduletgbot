@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime,timedelta
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 import config
 from data_manager import data_manager,ScheduleUnavailable,UnknownGroup,UNAVAILABLE
@@ -23,6 +24,11 @@ async def run_bot():
     bot=Bot(config.BOT_TOKEN,default=DefaultBotProperties(parse_mode='HTML'),session=session)
     bot.session.middleware(RetryRequestMiddleware())
     subscription.init(bot, config.CHANNEL)
+    if not await subscription.check_configuration():
+        raise RuntimeError(
+            'Проверка канала не пройдена: бот должен быть администратором канала '
+            'или укажите CHANNEL="" / REQUIRE_SUBSCRIPTION=false.'
+        )
     dp=Dispatcher(); dp.update.middleware(subscription.SubscriptionMiddleware()); dp.include_router(inline_router)
 
     async def send_chunks(message,text,keyboard=None):
@@ -141,7 +147,7 @@ async def run_bot():
         await callback.answer()
         message=callback.message
         if not isinstance(message,types.Message) or not callback.from_user: return
-        if await subscription.is_subscribed(callback.from_user.id):
+        if await subscription.is_subscribed(callback.from_user.id,force=True):
             try: await message.edit_text('✅ Спасибо! Теперь выберите группу.')
             except TelegramBadRequest: pass
             await choose(message)
@@ -160,16 +166,21 @@ async def run_bot():
 
 class SafeFormatter(logging.Formatter):
     def format(self,record):
-        text=super().format(record)
-        return text.replace(config.BOT_TOKEN,'[TOKEN]') if config.BOT_TOKEN else text
+        return config.redact(super().format(record))
 
 def main():
+    formatter=SafeFormatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
     handler=logging.StreamHandler(sys.stdout)
-    handler.setFormatter(SafeFormatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+    handler.setFormatter(formatter)
     handlers=[handler]
     if '--check' not in sys.argv:
-        file_handler=logging.FileHandler(config.BASE_DIR/'bot.log',encoding='utf-8')
-        file_handler.setFormatter(SafeFormatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+        file_handler=RotatingFileHandler(
+            config.BASE_DIR/'bot.log',
+            maxBytes=config.LOG_MAX_BYTES,
+            backupCount=config.LOG_BACKUP_COUNT,
+            encoding='utf-8',
+        )
+        file_handler.setFormatter(formatter)
         handlers.append(file_handler)
     logging.basicConfig(level=logging.INFO,handlers=handlers,force=True)
     try:
