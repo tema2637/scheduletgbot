@@ -215,6 +215,19 @@ async def run_bot():
         stats=data_manager.get_stats()
         top_lines=[f"{i}. <b>{ui.safe(g)}</b> — {cnt}" for i,(g,cnt) in enumerate(stats['top_groups'],1)]
         top_str='\n'.join(top_lines) if top_lines else 'нет данных'
+        chats_info=data_manager.get_group_chats()
+        if chats_info:
+            chat_lines=[]
+            for cid,g in chats_info:
+                try:
+                    chat=await bot.get_chat(cid)
+                    c_title=chat.title or str(cid)
+                except Exception:
+                    c_title=str(cid)
+                chat_lines.append(f"• {ui.safe(c_title)} → <b>{ui.safe(g)}</b>")
+            chats_str='\n'.join(chat_lines)
+        else:
+            chats_str='нет подключенных бесед'
         text=(
             "📊 <b>Статистика бота</b>\n\n"
             f"👤 Пользователей (ЛС): <b>{stats['total_users']}</b>\n"
@@ -223,7 +236,8 @@ async def run_bot():
             f"📅 Активных за 7 дней: <b>{stats['active_7d']}</b>\n"
             f"⏰ С напоминаниями: <b>{stats['with_reminders']}</b>\n"
             f"👨‍🏫 В режиме преподавателя: <b>{stats['teachers_users']}</b>\n\n"
-            f"🏆 <b>Топ групп:</b>\n{top_str}"
+            f"🏆 <b>Топ групп:</b>\n{top_str}\n\n"
+            f"💬 <b>Подключенные беседы ({len(chats_info)}):</b>\n{chats_str}"
         )
         await message.answer(text,parse_mode='HTML')
 

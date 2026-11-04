@@ -266,6 +266,7 @@ class CoreTests(unittest.TestCase):
             manager.touch_user(-100123456)
 
             self.assertEqual(manager.get_user_target(-100123456), "РЗ 252")
+            self.assertEqual(manager.get_group_chats(), [(-100123456, "РЗ 252")])
 
             stats = manager.get_stats()
             self.assertEqual(stats["total_users"], 2)

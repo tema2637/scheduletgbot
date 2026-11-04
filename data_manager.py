@@ -252,6 +252,11 @@ class DataManager:
         try:
             with c: return [r[0] for r in c.execute('SELECT user_id FROM user_preferences WHERE group_name=?',(target,)).fetchall()]
         finally: c.close()
+    def get_group_chats(self):
+        c=self._connect()
+        try:
+            with c: return c.execute('SELECT user_id,group_name FROM user_preferences WHERE user_id < 0 ORDER BY last_active DESC').fetchall()
+        finally: c.close()
     def touch_user(self,user_id):
         c=self._connect()
         try:
